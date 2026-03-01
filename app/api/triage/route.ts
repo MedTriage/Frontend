@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
       intent_type: data.intent_type,
       intent_confidence: data.intent_confidence,
       companion_output: data.companion_output,
+      rag_output: data.rag_output || null,
       triage_level: level,
     });
   } catch (error) {

@@ -67,13 +67,13 @@ export const NavbarRoot = ({ children, className, alwaysVisible = false }: Navba
   return (
     <motion.div
       ref={ref}
-      className={cn("sticky inset-x-0 top-0 z-50 w-full pt-6", className)}
+      className={cn("sticky inset-x-0 top-0 z-50 w-full", !alwaysVisible && "pt-6", className)}
     >
       {React.Children.map(children, (child) =>
         React.isValidElement(child)
           ? React.cloneElement(
-              child as React.ReactElement<{ visible?: boolean }>,
-              { visible }
+              child as React.ReactElement<{ visible?: boolean; alwaysVisible?: boolean }>,
+              { visible, alwaysVisible }
             )
           : child
       )}
@@ -83,16 +83,16 @@ export const NavbarRoot = ({ children, className, alwaysVisible = false }: Navba
 
 /* ─── NavBody (desktop) ─── */
 
-export const NavBody = ({ children, className, visible }: NavBodyProps) => {
+export const NavBody = ({ children, className, visible, alwaysVisible }: NavBodyProps & { alwaysVisible?: boolean }) => {
   return (
     <motion.div
       animate={{
         backdropFilter: visible ? "blur(12px)" : "none",
-        boxShadow: visible
+        boxShadow: visible && !alwaysVisible
           ? "0 0 24px rgba(34,42,53,0.06), 0 1px 1px rgba(0,0,0,0.05), 0 0 0 1px rgba(34,42,53,0.04), 0 0 4px rgba(34,42,53,0.08), 0 16px 68px rgba(47,48,55,0.05), 0 1px 0 rgba(255,255,255,0.1) inset"
           : "none",
-        width: visible ? "55%" : "100%",
-        y: visible ? 20 : 0,
+        width: alwaysVisible ? "100%" : visible ? "55%" : "100%",
+        y: alwaysVisible ? 0 : visible ? 20 : 0,
       }}
       transition={{ type: "spring", stiffness: 200, damping: 50 }}
       style={{ minWidth: "800px" }}

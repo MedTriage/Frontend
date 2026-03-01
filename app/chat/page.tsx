@@ -58,13 +58,42 @@ const TRIAGE_CONFIG = {
   },
 };
 
-// Simulated responses for Level 2 and Level 3 (agents not yet built)
-function simulateLevel2Response(): string {
-  return "Based on your symptoms, I've prepared a preliminary assessment and treatment recommendation. This includes a suggested prescription that requires verification by a licensed physician before it can be issued to you.\n\n📋 Preliminary Assessment:\n• Symptoms noted and categorized\n• Suggested treatment pathway identified\n• Prescription draft prepared\n\nThis recommendation has been sent to an available doctor for review. You'll be notified once verified.";
-}
-
+// Simulated response for Level 3 (emergency agent not yet built)
 function simulateLevel3Response(): string {
   return "⚠️ EMERGENCY DETECTED — This system is now locked for your safety.\n\nYour symptoms suggest a potentially life-threatening condition. Please call emergency services (911) immediately or proceed to the nearest emergency room.\n\nDo not wait. Time is critical.";
+}
+
+interface RagOutput {
+  probable_diagnosis: string;
+  differentials: string[];
+  recommended_actions: string[];
+  citations: string[];
+  confidence: number;
+  sources_retrieved: number;
+}
+
+function formatRagOutput(rag: RagOutput): string {
+  const lines: string[] = [];
+
+  lines.push(`📋 Probable Diagnosis:\n${rag.probable_diagnosis}`);
+
+  if (rag.differentials?.length) {
+    lines.push(`\n🔍 Differential Considerations:\n${rag.differentials.map((d) => `  • ${d}`).join("\n")}`);
+  }
+
+  if (rag.recommended_actions?.length) {
+    lines.push(`\n✅ Recommended Actions:\n${rag.recommended_actions.map((a) => `  • ${a}`).join("\n")}`);
+  }
+
+  if (rag.citations?.length) {
+    lines.push(`\n📚 Sources:\n${rag.citations.map((c) => `  • ${c}`).join("\n")}`);
+  }
+
+  lines.push(`\nConfidence: ${(rag.confidence * 100).toFixed(0)}% · ${rag.sources_retrieved} sources retrieved`);
+
+  lines.push(`\nThis assessment has been sent to a physician for verification. You'll be notified once reviewed.`);
+
+  return lines.join("\n");
 }
 
 interface TriageAPIResponse {
@@ -72,6 +101,7 @@ interface TriageAPIResponse {
   intent_type: string;
   intent_confidence: number;
   companion_output: string;
+  rag_output: RagOutput | null;
   triage_level: TriageLevel;
 }
 
@@ -162,10 +192,13 @@ async function getTriageResponse(
       };
     }
 
-    // Level 2: use backend response if available, otherwise simulated
+    // Level 2: format RAG output from backend
     if (data.triage_level === 2) {
+      const content = data.rag_output
+        ? formatRagOutput(data.rag_output)
+        : data.companion_output || "Clinical assessment pending — awaiting RAG pipeline response.";
       return {
-        content: data.companion_output || simulateLevel2Response(),
+        content,
         level: 2,
         intentType: data.intent_type,
         confidence: data.intent_confidence,
@@ -251,8 +284,8 @@ function fallbackClassify(input: string): { content: string; level: TriageLevel 
     return { level: 3, content: simulateLevel3Response() };
   }
 
-  // Everything else is clinical → Level 2
-  return { level: 2, content: simulateLevel2Response() };
+  // Everything else is clinical → Level 2 (fallback — no RAG data available offline)
+  return { level: 2, content: "Clinical query detected. Unable to reach the triage backend for a full RAG assessment. Please ensure the server is running and try again." };
 }
 
 export default function ChatPage() {
