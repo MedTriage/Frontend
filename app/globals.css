@@ -123,3 +123,74 @@ body {
 .glow-accent {
   box-shadow: 0 0 20px rgba(110, 231, 183, 0.08);
 }
+
+/* Workflow pipeline animations */
+@keyframes flow-down {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: calc(100% - 8px);
+    opacity: 0;
+  }
+}
+
+.workflow-connector {
+  position: relative;
+  width: 2px;
+  height: 40px;
+  overflow: visible;
+}
+
+/* Static line */
+.workflow-connector::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: var(--border);
+  opacity: 0.5;
+}
+
+/* Animated glowing dot */
+.workflow-connector::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent), 0 0 20px rgba(110, 231, 183, 0.3);
+  animation: flow-down 2.2s ease-in-out infinite;
+  z-index: 2;
+}
+
+/* Stagger each connector's pulse so they cascade */
+.workflow-step:nth-child(1) .workflow-connector::after { animation-delay: 0s; }
+.workflow-step:nth-child(2) .workflow-connector::after { animation-delay: 0.35s; }
+.workflow-step:nth-child(3) .workflow-connector::after { animation-delay: 0.7s; }
+.workflow-step:nth-child(4) .workflow-connector::after { animation-delay: 1.05s; }
+.workflow-step:nth-child(5) .workflow-connector::after { animation-delay: 1.4s; }
+
+@keyframes icon-ring-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(110, 231, 183, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(110, 231, 183, 0);
+  }
+}
+
+.workflow-icon-active {
+  animation: icon-ring-pulse 3s ease-in-out infinite;
+}

@@ -102,7 +102,7 @@ const TRIAGE_CONFIG = {
 
 // Simulated response for Level 3 (emergency agent not yet built)
 function simulateLevel3Response(): string {
-  return "⚠️ EMERGENCY DETECTED — This system is now locked for your safety.\n\nYour symptoms suggest a potentially life-threatening condition. Please call emergency services (911) immediately or proceed to the nearest emergency room.\n\nDo not wait. Time is critical.";
+  return "EMERGENCY DETECTED — This system is now locked for your safety.\n\nYour symptoms suggest a potentially life-threatening condition. Please call emergency services (911) immediately or proceed to the nearest emergency room.\n\nDo not wait. Time is critical.";
 }
 
 interface RagOutput {
@@ -481,7 +481,7 @@ export default function ChatPage() {
         <div className="flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-red-400/5 border border-red-400/20">
           <AlertTriangle className="w-4 h-4 text-red-400" />
           <span className="font-mono text-xs text-red-400">
-            System locked — Please contact emergency services immediately
+            System locked — Emergency Services have been alerted. Please go to the nearest hospital or emergency room. Do not wait. Time is critical.
           </span>
         </div>
       ) : (
@@ -493,7 +493,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={mode === "drugs" ? "Ask about a drug or pharmacology..." : "Describe your symptoms or health concern..."}
+              placeholder={mode === "drugs" ? "Ask about a drug or pharmacology..." : "Type your symptoms, ask about a medication, or paste an image here..."}
               className="w-full bg-transparent text-sm text-foreground placeholder:text-muted/40 focus:outline-none resize-none font-sans leading-relaxed min-h-20"
               disabled={isTyping}
               rows={3}
@@ -590,7 +590,7 @@ export default function ChatPage() {
       )}
 
       <p className="font-mono text-[10px] text-muted/30 text-center mt-3">
-        AI-assisted triage — not a substitute for professional medical advice
+        Agentic triage system for clinical decision support
       </p>
     </div>
   );
@@ -617,9 +617,30 @@ export default function ChatPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5" />
-                  <span>3-level response system</span>
+                  <span>Detail your symptoms, upload relevant medical images, or ask a clinical question.</span>
                 </div>
               </div>
+            </div>
+
+            {/* Starter prompts */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { text: "What are the standard symptoms of strep throat?", icon: Stethoscope },
+                { text: "Analyze this image of a skin rash.", icon: Brain },
+                { text: "How does this triage system keep my data safe?", icon: Activity },
+              ].map((prompt) => (
+                <button
+                  key={prompt.text}
+                  onClick={() => {
+                    setInput(prompt.text);
+                    textareaRef.current?.focus();
+                  }}
+                  className="group inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border/50 bg-card text-xs text-muted hover:text-foreground hover:border-accent/30 transition-all"
+                >
+                  <prompt.icon className="w-3.5 h-3.5 text-muted/50 group-hover:text-accent transition-colors shrink-0" />
+                  <span className="font-mono text-[11px] leading-snug">{prompt.text}</span>
+                </button>
+              ))}
             </div>
 
             {/* Input card */}
