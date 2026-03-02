@@ -49,7 +49,7 @@ function classifyLevel(intentType: string, userInput: string): 1 | 2 | 3 {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text } = body;
+    const { text, chat_history } = body;
 
     if (!text || typeof text !== "string") {
       return NextResponse.json(
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, chat_history: chat_history || [] }),
     });
 
     if (!backendResponse.ok) {
@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
       intent_confidence: data.intent_confidence,
       companion_output: data.companion_output,
       rag_output: data.rag_output || null,
+      critic_output: data.critic_output || null,
       triage_level: level,
     });
   } catch (error) {
