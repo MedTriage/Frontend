@@ -72,6 +72,15 @@ interface RagOutput {
   sources_retrieved: number;
 }
 
+interface CriticOutput {
+  response: string;
+  is_supported: boolean;
+  issues: string[];
+  safety_risk: string;
+  decision: string;
+  confidence_adjusted: number;
+}
+
 function formatRagOutput(rag: RagOutput): string {
   const lines: string[] = [];
 
@@ -102,11 +111,15 @@ interface TriageAPIResponse {
   intent_confidence: number;
   companion_output: string;
   rag_output: RagOutput | null;
+  critic_output: CriticOutput | null;
+  critic_decision: string | null;
+  critic_response: string | null;
   triage_level: TriageLevel;
 }
 
 async function getTriageResponse(
-  text: string
+  text: string,
+  chatHistory: { role: string; content: string }[] = []
 ): Promise<{
   content: string;
   level: TriageLevel;
@@ -121,7 +134,7 @@ async function getTriageResponse(
     const res = await fetch("/api/triage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, chat_history: chatHistory }),
       signal: controller.signal,
     });
 
@@ -192,11 +205,15 @@ async function getTriageResponse(
       };
     }
 
-    // Level 2: format RAG output from backend
+    // Level 2: use critic_response if available, otherwise fall back to RAG output
     if (data.triage_level === 2) {
-      const content = data.rag_output
-        ? formatRagOutput(data.rag_output)
-        : data.companion_output || "Clinical assessment pending — awaiting RAG pipeline response.";
+      const content = data.critic_response
+        ? data.critic_response
+        : data.critic_output?.response
+          ? data.critic_output.response
+          : data.rag_output
+            ? formatRagOutput(data.rag_output)
+            : data.companion_output || "Clinical assessment pending — awaiting pipeline response.";
       return {
         content,
         level: 2,
@@ -342,8 +359,16 @@ export default function ChatPage() {
     setInput("");
     setIsTyping(true);
 
+    // Build chat_history from previous messages (exclude system/error messages and the current one)
+    const chatHistory = messages
+      .filter((m) => m.role === "user" || m.role === "ai")
+      .map((m) => ({
+        role: m.role === "ai" ? "assistant" : "user",
+        content: m.content,
+      }));
+
     // Call real backend API
-    const response = await getTriageResponse(userMessage.content);
+    const response = await getTriageResponse(userMessage.content, chatHistory);
 
     setIsTyping(false);
 
