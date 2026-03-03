@@ -50,7 +50,7 @@ const levels = [
     label: "Doctor Verification",
     tagline: "Supervised Autonomy",
     description:
-      "When symptoms suggest a condition requiring treatment, the AI drafts a preliminary assessment and prescription — but it must be verified by a licensed physician before reaching the patient.",
+      "When symptoms suggest a condition requiring treatment, the Agents draft a preliminary assessment and prescription — which is then verified by a licensed physician before reaching the patient.",
     examples: [
       "I've had a persistent cough and fever for 3 days",
       "I think I need antibiotics for a UTI",
@@ -67,7 +67,7 @@ const levels = [
     label: "Emergency Redirect",
     tagline: "Zero Autonomy — Safety Lock",
     description:
-      "If the system detects life-threatening symptoms, it immediately locks itself and directs the patient to emergency services. No AI-generated advice is given — only redirection to professional care.",
+      "If the system detects life-threatening symptoms, it immediately locks itself and directs the patient to emergency services. The Agents notify the local authorities and redirects the patient to professional care.",
     examples: [
       "I'm having severe chest pain and can't breathe",
       "Someone is having a seizure",
@@ -83,46 +83,46 @@ const levels = [
 
 const agents = [
   {
-    name: "Triage Classifier",
+    name: "Intent Router",
     description:
-      "The gatekeeper. Analyzes incoming patient queries using NLP and symptom severity scoring to classify them into Level 1, 2, or 3. Runs first on every interaction.",
+      "The gatekeeper. Analyzes incoming patient queries and classifies into three categories - clinical reasoning, multimodal image analysis, and conversational engagement. Runs first on every interaction.",
     icon: FileSearch,
-    tags: ["NLP", "Classification", "Severity Scoring"],
+    tags: ["Zero Shot Detection", "Classification", "Semantic Routing"],
   },
   {
-    name: "Knowledge Agent",
+    name: "Vision Agent",
     description:
-      "Handles Level 1 queries. Retrieves evidence-based health information from curated medical databases and generates clear, patient-friendly responses.",
+      "Handles multimodal image analysis and interpretation, working alonside the RAG Agent to ensure all visual symptoms are cross-referenced with verified medical literature.",
     icon: Brain,
-    tags: ["RAG", "Medical KB", "Level 1"],
+    tags: ["Multimodal Analysis", "Image Interpretation", "Feature Extraction"],
   },
   {
-    name: "Prescription Agent",
+    name: "RAG Agent",
     description:
-      "Activated for Level 2 cases. Generates preliminary treatment plans and prescription drafts based on symptom analysis, patient history, and clinical guidelines.",
+      "Leverages semantic search across a curated vector database to retrieve verified clinical evidence, ensuring all diagnostic insights and prescription drafts are strictly anchored in established medical science.",
     icon: ClipboardList,
-    tags: ["Treatment Plans", "Drug Interactions", "Level 2"],
+    tags: ["Treatment Plans", "Drug Interactions", "Evidence-Based"],
   },
   {
-    name: "Verification Router",
+    name: "The Critique",
     description:
-      "Bridges AI and human oversight. Routes Level 2 prescriptions to available physicians, tracks verification status, and relays approved treatments back to the patient.",
+      "Acts as the system's clinical safeguard by cross-examining generated drafts. Any unsupported claims or hallucinations are instantly flagged and quarantined for autonomous re-evaluation and iterative self-correction.",
     icon: UserCheck,
-    tags: ["Human-in-the-Loop", "Doctor Queue", "Approval"],
+    tags: ["Agentic RAG", "Hallucination Detection", "Approval Gatekeeper"],
   },
   {
-    name: "Emergency Agent",
+    name: "Guardian Agent",
     description:
-      "The safety net. Triggers on Level 3 classifications to immediately lock the system, suppress AI responses, and display emergency contact information and nearest ER routing.",
+      "Enforces the Graduated Autonomy protocol. By evaluating the clinical risk of the generated draft, it deterministically routes Level 1 responses to the patient while escalating Level 2 and 3 cases for mandatory human oversight.",
     icon: Siren,
-    tags: ["Safety Lock", "ER Routing", "Level 3"],
+    tags: ["Safety Lock", "Graduated Autonomy Enforcer"],
   },
   {
-    name: "Orchestrator",
+    name: "The Conversator",
     description:
-      "The conductor. Coordinates all agents, manages conversation state, handles escalation/de-escalation between levels, and ensures system coherence across multi-turn interactions.",
+      "Handles empathetic daily discourse and non-clinical interactions, maintaining a natural dialogue state without triggering complex protocols.",
     icon: Workflow,
-    tags: ["State Management", "Multi-Agent", "Coordination"],
+    tags: ["Routine Dicourse", "Conversationist", "Patient Engagement"],
   },
 ];
 
@@ -130,37 +130,43 @@ const workflow = [
   {
     step: 1,
     title: "Patient Input",
-    description: "User describes symptoms or asks a health question through the chat interface.",
+    description:
+      "User describes symptoms or asks a health question through the chat interface.",
     icon: Stethoscope,
   },
   {
     step: 2,
-    title: "Triage Classification",
-    description: "The Triage Classifier agent analyzes the input and assigns a severity level (1–3).",
+    title: "Intent Classification",
+    description:
+      "The Intent Router analyzes the input and assigns it to the specific agent depending on the type of input.",
     icon: FileSearch,
   },
   {
     step: 3,
-    title: "Agent Routing",
-    description: "The Orchestrator routes to the appropriate agent based on the classified level.",
+    title: "Retrieval & Drafting",
+    description:
+      "The Vision Agent and RAG Agent work together to analyze any images and retrieve relevant medical literature, generating a preliminary response draft.",
     icon: Workflow,
   },
   {
     step: 4,
-    title: "Response Generation",
-    description: "The assigned agent generates a response — information, prescription draft, or emergency redirect.",
+    title: "Critique & Triage",
+    description:
+      "The Critique evaluates the draft for accuracy and safety. The Guardian Agent then classifies the response into one of three autonomy levels, determining the delivery pathway.",
     icon: Bot,
   },
   {
     step: 5,
     title: "Verification (if needed)",
-    description: "Level 2 responses are held and sent for doctor verification before delivery.",
+    description:
+      "Level 2 responses are held and sent for doctor verification before delivery. Triggers an immediate system deadlock on Level 3 cases, routing alerts to medical authorities.",
     icon: UserCheck,
   },
   {
     step: 6,
     title: "Patient Delivery",
-    description: "The verified (or direct) response is delivered to the patient with full transparency on the triage level.",
+    description:
+      "The verified (or direct) response is delivered to the patient with full transparency on the triage level. For Level 3 cases, the patient receives an emergency redirect with instructions to seek immediate care.",
     icon: ShieldCheck,
   },
 ];
@@ -168,8 +174,8 @@ const workflow = [
 const stats = [
   { value: "3", label: "Autonomy Levels" },
   { value: "6", label: "Specialized Agents" },
-  { value: "<2s", label: "Avg. Triage Time" },
-  { value: "100%", label: "L3 Lock Rate" },
+  { value: "0%", label: "Uncited Claims" },
+  { value: "100%", label: "Human in the Loop" },
 ];
 
 /* ─── Component ─── */
@@ -189,13 +195,13 @@ export default function Home() {
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.1]">
-            Clinical decisions,{" "}
-            <span className="text-accent">graduated</span> with care
+            Clinical decisions, <span className="text-accent">graduated</span>{" "}
+            with care
           </h1>
 
           <p className="text-muted text-base sm:text-lg max-w-xl mx-auto leading-relaxed">
-            A multi-agent AI triage system that adapts its level of autonomy
-            to the severity of your condition — from instant guidance to
+            A multi-agent AI triage system that adapts its level of autonomy to
+            the severity of your condition — from instant guidance to
             physician-verified prescriptions to emergency lockdown.
           </p>
 
@@ -247,9 +253,10 @@ export default function Home() {
               Three Levels of Autonomy
             </h2>
             <p className="text-muted text-sm mt-3 max-w-lg mx-auto leading-relaxed">
-              Each patient interaction is classified into one of three levels.
-              The higher the level, the less autonomy the AI has — and the more
-              human oversight is required.
+              The architecture enforces a strict Graduated Autonomy protocol
+              across three levels. There is an intentional, inverse relationship
+              between medical risk and AI freedom—the higher the stakes, the
+              tighter the human oversight.
             </p>
           </div>
 
@@ -272,16 +279,12 @@ export default function Home() {
                       <span className="font-mono text-xs text-muted/70">
                         Level {l.level}
                       </span>
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${l.dot}`}
-                      />
+                      <span className={`w-1.5 h-1.5 rounded-full ${l.dot}`} />
                       <span className={`font-mono text-xs ${l.color}`}>
                         {l.tagline}
                       </span>
                     </div>
-                    <h3
-                      className={`text-lg font-semibold ${l.color} mb-2`}
-                    >
+                    <h3 className={`text-lg font-semibold ${l.color} mb-2`}>
                       {l.label}
                     </h3>
                     <p className="text-sm text-muted leading-relaxed mb-4">
@@ -368,41 +371,47 @@ export default function Home() {
               How It Works
             </h2>
             <p className="text-muted text-sm mt-3 max-w-lg mx-auto leading-relaxed">
-              From symptom input to verified response — a six-step pipeline
-              that ensures safety at every stage.
+              From symptom input to verified response — a six-step pipeline that
+              ensures safety at every stage.
             </p>
           </div>
 
           <div className="relative">
-            {/* Vertical line */}
-            <div className="absolute left-6 top-0 bottom-0 w-px bg-border/50 hidden sm:block" />
-
-            <div className="space-y-6">
+            <div className="space-y-0">
               {workflow.map((w, i) => (
-                <div key={w.step} className="flex items-start gap-5">
-                  <div className="relative shrink-0">
-                    <div className="w-12 h-12 rounded-xl border border-border/50 bg-card flex items-center justify-center z-10 relative">
-                      <w.icon className="w-4 h-4 text-accent" />
+                <div key={w.step} className="workflow-step">
+                  <div className="flex items-start gap-5 py-3">
+                    <div className="relative shrink-0">
+                      <div className="w-12 h-12 rounded-xl border border-border/50 bg-card flex items-center justify-center z-10 relative workflow-icon-active">
+                        <w.icon className="w-4 h-4 text-accent" />
+                      </div>
                     </div>
-                  </div>
-                  <div className="pt-1 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-[10px] text-muted/50">
-                        Step {w.step}
-                      </span>
-                      {i === 4 && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-400/10 text-amber-400 border border-amber-400/20">
-                          Conditional
+                    <div className="pt-1 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono text-[10px] text-muted/50">
+                          Step {w.step}
                         </span>
-                      )}
+                        {i === 4 && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-400/10 text-amber-400 border border-amber-400/20">
+                            Conditional
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-semibold text-sm mb-1">{w.title}</h3>
+                      <p className="text-xs text-muted leading-relaxed">
+                        {w.description}
+                      </p>
                     </div>
-                    <h3 className="font-semibold text-sm mb-1">
-                      {w.title}
-                    </h3>
-                    <p className="text-xs text-muted leading-relaxed">
-                      {w.description}
-                    </p>
                   </div>
+
+                  {/* Animated connector line between steps */}
+                  {i < workflow.length - 1 && (
+                    <div className="flex items-start gap-5">
+                      <div className="shrink-0 flex justify-center w-12">
+                        <div className="workflow-connector" />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -432,12 +441,12 @@ export default function Home() {
               {
                 icon: Zap,
                 title: "Graduated Autonomy",
-                desc: "AI autonomy scales inversely with severity. Low-risk queries get instant AI answers; high-risk cases get full human oversight or immediate ER referral.",
+                desc: "Agentic autonomy scales inversely with severity. Low-risk queries get instant AI answers; high-risk cases get full human oversight or immediate ER referral.",
               },
               {
                 icon: UserCheck,
                 title: "Human in the Loop",
-                desc: "No prescription leaves the system without a doctor's sign-off. The AI assists and accelerates — but never replaces — clinical judgment.",
+                desc: "No prescription leaves the system without a doctor's sign-off. The Agents assist and accelerate — but never replace — clinical judgment.",
               },
               {
                 icon: ShieldCheck,
@@ -453,9 +462,7 @@ export default function Home() {
                   <p.icon className="w-4 h-4 text-accent" />
                 </div>
                 <h3 className="font-semibold text-sm mb-2">{p.title}</h3>
-                <p className="text-xs text-muted leading-relaxed">
-                  {p.desc}
-                </p>
+                <p className="text-xs text-muted leading-relaxed">{p.desc}</p>
               </div>
             ))}
           </div>

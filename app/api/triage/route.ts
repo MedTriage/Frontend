@@ -82,6 +82,12 @@ export async function POST(request: NextRequest) {
     // Determine triage level from intent_type + user input for emergency detection
     const level = classifyLevel(data.intent_type || "", text);
 
+    // Use guardian triage level if present, otherwise fall back to local classification
+    const guardianLevel = data.guardian_output?.triage_level;
+    const finalLevel = guardianLevel
+      ? parseInt(guardianLevel.replace("level_", ""), 10) as 1 | 2 | 3
+      : level;
+
     return NextResponse.json({
       user_input: data.user_input,
       intent_type: data.intent_type,
@@ -89,7 +95,10 @@ export async function POST(request: NextRequest) {
       companion_output: data.companion_output,
       rag_output: data.rag_output || null,
       critic_output: data.critic_output || null,
-      triage_level: level,
+      critic_decision: data.critic_decision || null,
+      critic_response: data.critic_response || null,
+      guardian_output: data.guardian_output || null,
+      triage_level: finalLevel,
     });
   } catch (error) {
     console.error("API route error:", error);
