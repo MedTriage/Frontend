@@ -17,6 +17,14 @@ import {
   Timer,
   CircleAlert,
   ChevronDown,
+  ChevronRight,
+  Shield,
+  ShieldCheck,
+  ShieldAlert,
+  Lock,
+  FileSearch,
+  BookOpen,
+  Scale,
 } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 
@@ -63,6 +71,15 @@ const MODEL_OPTIONS: ModelOption[] = [
 
 type TriageLevel = 1 | 2 | 3;
 
+interface PipelineMetadata {
+  intentType?: string;
+  intentConfidence?: number;
+  ragOutput?: RagOutput | null;
+  criticOutput?: CriticOutput | null;
+  criticDecision?: string | null;
+  guardianOutput?: GuardianOutput | null;
+}
+
 interface Message {
   id: string;
   role: "user" | "ai" | "system" | "error";
@@ -71,6 +88,7 @@ interface Message {
   timestamp: Date;
   status?: "pending" | "verified" | "rejected";
   errorType?: "api_offline" | "api_error" | "timeout" | "empty_response" | "unknown";
+  pipeline?: PipelineMetadata;
 }
 
 const TRIAGE_CONFIG = {
@@ -123,6 +141,13 @@ interface CriticOutput {
   confidence_adjusted: number;
 }
 
+interface GuardianOutput {
+  triage_level: string;
+  reasoning: string;
+  requires_doctor: boolean;
+  ai_lock: boolean;
+}
+
 function formatRagOutput(rag: RagOutput): string {
   const lines: string[] = [];
 
@@ -156,6 +181,7 @@ interface TriageAPIResponse {
   critic_output: CriticOutput | null;
   critic_decision: string | null;
   critic_response: string | null;
+  guardian_output: GuardianOutput | null;
   triage_level: TriageLevel;
 }
 
@@ -167,11 +193,12 @@ async function getTriageResponse(
   level: TriageLevel;
   intentType?: string;
   confidence?: number;
+  pipeline?: PipelineMetadata;
   error?: { type: Message["errorType"]; message: string };
 }> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     const res = await fetch("/api/triage", {
       method: "POST",
@@ -222,8 +249,9 @@ async function getTriageResponse(
 
     const data: TriageAPIResponse = await res.json();
 
-    // Validate response has content
-    if (!data.companion_output && data.triage_level === 1) {
+    // Check if there's any usable content across all output fields
+    const hasContent = !!(data.companion_output || data.critic_response || data.critic_output?.response || data.rag_output);
+    if (!hasContent) {
       return {
         content: "",
         level: 1,
@@ -237,13 +265,28 @@ async function getTriageResponse(
       };
     }
 
-    // Level 1: use actual backend companion response
+    // Build pipeline metadata for all levels
+    const pipelineMeta: PipelineMetadata = {
+      intentType: data.intent_type,
+      intentConfidence: data.intent_confidence,
+      ragOutput: data.rag_output,
+      criticOutput: data.critic_output,
+      criticDecision: data.critic_decision,
+      guardianOutput: data.guardian_output,
+    };
+
+    // Level 1: use companion response, fall back to critic_response if available
     if (data.triage_level === 1) {
+      const content = data.companion_output
+        || data.critic_response
+        || data.critic_output?.response
+        || "Response received but content was empty.";
       return {
-        content: data.companion_output,
+        content,
         level: 1,
         intentType: data.intent_type,
         confidence: data.intent_confidence,
+        pipeline: pipelineMeta,
       };
     }
 
@@ -261,6 +304,7 @@ async function getTriageResponse(
         level: 2,
         intentType: data.intent_type,
         confidence: data.intent_confidence,
+        pipeline: pipelineMeta,
       };
     }
 
@@ -270,6 +314,7 @@ async function getTriageResponse(
       level: 3,
       intentType: data.intent_type,
       confidence: data.intent_confidence,
+      pipeline: pipelineMeta,
     };
   } catch (error) {
     console.error("Triage API error:", error);
@@ -282,7 +327,7 @@ async function getTriageResponse(
         error: {
           type: "timeout",
           message:
-            "The request timed out after 15 seconds. The backend may be under heavy load. Please try again.",
+            "The request timed out after 60 seconds. The backend may be under heavy load. Please try again.",
         },
       };
     }
@@ -355,9 +400,12 @@ export default function ChatPage() {
   const [mode, setMode] = useState<"triage" | "drugs">("triage");
   const [selectedModel, setSelectedModel] = useState<ModelOption>(MODEL_OPTIONS[0]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [pipelineStage, setPipelineStage] = useState(0);
+  const [expandedAudit, setExpandedAudit] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const pipelineTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const hasMessages = messages.length > 0;
 
@@ -403,6 +451,14 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsTyping(true);
+    setPipelineStage(0);
+
+    // Advance through first 3 stages on timers — stage 3 holds until the real response arrives
+    const timers: NodeJS.Timeout[] = [];
+    timers.push(setTimeout(() => setPipelineStage(1), 800));   // Intent Classification done
+    timers.push(setTimeout(() => setPipelineStage(2), 2000));  // RAG Retrieval done
+    timers.push(setTimeout(() => setPipelineStage(3), 3500));  // Critic Review done — holds here
+    pipelineTimerRef.current = timers[0]; // store ref for cleanup
 
     // Reset textarea height
     if (textareaRef.current) {
@@ -420,6 +476,14 @@ export default function ChatPage() {
     // Call real backend API
     const response = await getTriageResponse(userMessage.content, chatHistory);
 
+    // Clean up stage timers
+    timers.forEach(clearTimeout);
+
+    // Animate remaining stages: jump to stage 4 (Guardian active), then 5 (all done)
+    setPipelineStage(4);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    setPipelineStage(5);
+    await new Promise((resolve) => setTimeout(resolve, 300));
     setIsTyping(false);
 
     // Show error message in chat if something went wrong
@@ -443,6 +507,7 @@ export default function ChatPage() {
       triageLevel: response.level,
       timestamp: new Date(),
       status: response.level === 2 ? "pending" : undefined,
+      pipeline: response.pipeline,
     };
 
     setMessages((prev) => [...prev, aiMessage]);
@@ -834,6 +899,197 @@ export default function ChatPage() {
                           </div>
                         </div>
                       )}
+
+                      {/* Guardian Audit Trail — collapsible */}
+                      {message.pipeline && (
+                        <div className="mt-3 pt-3 border-t border-border/30">
+                          <button
+                            onClick={() => setExpandedAudit(expandedAudit === message.id ? null : message.id)}
+                            className="flex items-center gap-2 w-full text-left group"
+                          >
+                            <ChevronRight className={`w-3 h-3 text-muted/50 transition-transform duration-200 ${expandedAudit === message.id ? 'rotate-90' : ''}`} />
+                            <Shield className={`w-3 h-3 ${
+                              message.pipeline.guardianOutput?.ai_lock
+                                ? 'text-red-400'
+                                : message.pipeline.guardianOutput?.requires_doctor
+                                  ? 'text-amber-400'
+                                  : 'text-emerald-400'
+                            }`} />
+                            <span className="font-mono text-[10px] text-muted/60 group-hover:text-muted transition-colors">
+                              Guardian Audit Trail
+                            </span>
+                            {message.pipeline.criticOutput && (
+                              <span className="ml-auto font-mono text-[10px] text-muted/40">
+                                {(message.pipeline.criticOutput.confidence_adjusted * 100).toFixed(0)}% confidence
+                              </span>
+                            )}
+                          </button>
+
+                          {expandedAudit === message.id && (
+                            <div className="mt-3 space-y-2.5 animate-audit-expand">
+                              {/* Stage 1: Intent Classification */}
+                              <div className="flex items-start gap-2.5">
+                                <div className="w-5 h-5 rounded-md bg-emerald-400/10 flex items-center justify-center shrink-0 mt-0.5">
+                                  <FileSearch className="w-3 h-3 text-emerald-400" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-mono text-[10px] text-emerald-400 uppercase tracking-wider">Intent Classification</p>
+                                  <p className="text-xs text-muted/70 mt-0.5">
+                                    {message.pipeline.intentType || 'unknown'}
+                                    {message.pipeline.intentConfidence != null && (
+                                      <span className="text-muted/40 ml-1.5">
+                                        ({(message.pipeline.intentConfidence * 100).toFixed(0)}% confidence)
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Stage 2: RAG Retrieval */}
+                              {message.pipeline.ragOutput && (
+                                <div className="flex items-start gap-2.5">
+                                  <div className="w-5 h-5 rounded-md bg-blue-400/10 flex items-center justify-center shrink-0 mt-0.5">
+                                    <BookOpen className="w-3 h-3 text-blue-400" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-mono text-[10px] text-blue-400 uppercase tracking-wider">RAG Retrieval</p>
+                                    <p className="text-xs text-muted/70 mt-0.5">
+                                      {message.pipeline.ragOutput.probable_diagnosis}
+                                    </p>
+                                    <p className="text-[10px] text-muted/40 mt-0.5">
+                                      {message.pipeline.ragOutput.sources_retrieved} sources · {(message.pipeline.ragOutput.confidence * 100).toFixed(0)}% confidence
+                                    </p>
+                                    {message.pipeline.ragOutput.differentials?.length > 0 && (
+                                      <div className="mt-1.5 flex flex-wrap gap-1">
+                                        {message.pipeline.ragOutput.differentials.map((d, i) => (
+                                          <span key={i} className="px-1.5 py-0.5 rounded bg-blue-400/5 text-[10px] text-blue-400/70 font-mono">
+                                            {d}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Stage 3: Critic Review */}
+                              {message.pipeline.criticOutput && (
+                                <div className="flex items-start gap-2.5">
+                                  <div className="w-5 h-5 rounded-md bg-violet-400/10 flex items-center justify-center shrink-0 mt-0.5">
+                                    <Scale className="w-3 h-3 text-violet-400" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-mono text-[10px] text-violet-400 uppercase tracking-wider">Critic Review</p>
+                                    <div className="mt-1 flex items-center gap-2">
+                                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                        message.pipeline.criticOutput.decision === 'approve'
+                                          ? 'bg-emerald-400/10 text-emerald-400'
+                                          : message.pipeline.criticOutput.decision === 'reject'
+                                            ? 'bg-red-400/10 text-red-400'
+                                            : 'bg-amber-400/10 text-amber-400'
+                                      }`}>
+                                        {message.pipeline.criticOutput.decision === 'approve' ? (
+                                          <CheckCircle2 className="w-2.5 h-2.5" />
+                                        ) : message.pipeline.criticOutput.decision === 'reject' ? (
+                                          <XCircle className="w-2.5 h-2.5" />
+                                        ) : (
+                                          <CircleAlert className="w-2.5 h-2.5" />
+                                        )}
+                                        {message.pipeline.criticOutput.decision}
+                                      </span>
+                                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                        message.pipeline.criticOutput.safety_risk === 'low'
+                                          ? 'bg-emerald-400/10 text-emerald-400'
+                                          : message.pipeline.criticOutput.safety_risk === 'high'
+                                            ? 'bg-red-400/10 text-red-400'
+                                            : 'bg-amber-400/10 text-amber-400'
+                                      }`}>
+                                        risk: {message.pipeline.criticOutput.safety_risk}
+                                      </span>
+                                      {/* Confidence bar */}
+                                      <div className="flex-1 flex items-center gap-1.5">
+                                        <div className="flex-1 h-1 rounded-full bg-border/30 overflow-hidden">
+                                          <div
+                                            className="h-full rounded-full bg-violet-400/60 transition-all duration-500"
+                                            style={{ width: `${message.pipeline.criticOutput.confidence_adjusted * 100}%` }}
+                                          />
+                                        </div>
+                                        <span className="font-mono text-[9px] text-muted/40 shrink-0">
+                                          {(message.pipeline.criticOutput.confidence_adjusted * 100).toFixed(0)}%
+                                        </span>
+                                      </div>
+                                    </div>
+                                    {message.pipeline.criticOutput.issues?.length > 0 && (
+                                      <div className="mt-1.5">
+                                        {message.pipeline.criticOutput.issues.map((issue, i) => (
+                                          <p key={i} className="text-[10px] text-amber-400/70 flex items-center gap-1">
+                                            <CircleAlert className="w-2.5 h-2.5 shrink-0" />
+                                            {issue}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Stage 4: Guardian Decision */}
+                              {message.pipeline.guardianOutput && (
+                                <div className="flex items-start gap-2.5">
+                                  <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
+                                    message.pipeline.guardianOutput.ai_lock
+                                      ? 'bg-red-400/10'
+                                      : message.pipeline.guardianOutput.requires_doctor
+                                        ? 'bg-amber-400/10'
+                                        : 'bg-emerald-400/10'
+                                  }`}>
+                                    {message.pipeline.guardianOutput.ai_lock ? (
+                                      <ShieldAlert className="w-3 h-3 text-red-400" />
+                                    ) : message.pipeline.guardianOutput.requires_doctor ? (
+                                      <ShieldCheck className="w-3 h-3 text-amber-400" />
+                                    ) : (
+                                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className={`font-mono text-[10px] uppercase tracking-wider ${
+                                      message.pipeline.guardianOutput.ai_lock
+                                        ? 'text-red-400'
+                                        : message.pipeline.guardianOutput.requires_doctor
+                                          ? 'text-amber-400'
+                                          : 'text-emerald-400'
+                                    }`}>
+                                      Guardian Decision
+                                    </p>
+                                    <p className="text-xs text-muted/70 mt-0.5">
+                                      {message.pipeline.guardianOutput.reasoning}
+                                    </p>
+                                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                        TRIAGE_CONFIG[message.triageLevel!].bg
+                                      } ${TRIAGE_CONFIG[message.triageLevel!].color}`}>
+                                        {message.pipeline.guardianOutput.triage_level.replace('_', ' ')}
+                                      </span>
+                                      {message.pipeline.guardianOutput.requires_doctor && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-400/10 text-[10px] text-amber-400 font-mono">
+                                          <Stethoscope className="w-2.5 h-2.5" />
+                                          requires physician
+                                        </span>
+                                      )}
+                                      {message.pipeline.guardianOutput.ai_lock && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-400/10 text-[10px] text-red-400 font-mono">
+                                          <Lock className="w-2.5 h-2.5" />
+                                          AI locked
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <p className="font-mono text-[10px] text-muted/40 mt-1.5">
@@ -848,15 +1104,67 @@ export default function ChatPage() {
             </div>
           ))}
 
-          {/* Typing indicator */}
+          {/* Pipeline progress indicator */}
           {isTyping && (
             <div className="flex justify-start animate-fade-in-up">
-              <div className="px-4 py-3 rounded-2xl rounded-bl-sm bg-card border border-border/50">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted mr-1">Analyzing</span>
-                  <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
-                  <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
-                  <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
+              <div className="px-5 py-4 rounded-2xl rounded-bl-sm bg-card border border-border/50 w-80">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-5 h-5 rounded-md bg-accent/15 flex items-center justify-center">
+                    <Activity className="w-3 h-3 text-accent animate-pulse" />
+                  </div>
+                  <span className="font-mono text-[11px] text-muted/70 uppercase tracking-wider">Pipeline Active</span>
+                </div>
+                <div className="space-y-2">
+                  {[
+                    { label: "Intent Classification", icon: FileSearch },
+                    { label: "RAG Retrieval", icon: BookOpen },
+                    { label: "Critic Review", icon: Scale },
+                    { label: "Guardian Decision", icon: Shield },
+                  ].map((stage, i) => {
+                    const isComplete = pipelineStage > i;
+                    const isActive = pipelineStage === i;
+                    const Icon = stage.icon;
+                    return (
+                      <div key={stage.label} className={`flex items-center gap-2.5 transition-all duration-300 ${isComplete ? 'opacity-100' : isActive ? 'opacity-100' : 'opacity-30'}`}>
+                        <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-all duration-300 ${
+                          isComplete
+                            ? 'bg-emerald-400/15'
+                            : isActive
+                              ? 'bg-accent/15 pipeline-icon-pulse'
+                              : 'bg-border/30'
+                        }`}>
+                          {isComplete ? (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                          ) : isActive ? (
+                            <Icon className="w-3 h-3 text-accent" />
+                          ) : (
+                            <Icon className="w-3 h-3 text-muted/40" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`font-mono text-[11px] transition-colors duration-300 ${
+                              isComplete ? 'text-emerald-400' : isActive ? 'text-foreground' : 'text-muted/40'
+                            }`}>
+                              {stage.label}
+                            </span>
+                            {isActive && (
+                              <div className="flex gap-0.5">
+                                <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
+                                <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
+                                <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
+                              </div>
+                            )}
+                          </div>
+                          {isActive && (
+                            <div className="mt-1 h-0.5 rounded-full bg-border/30 overflow-hidden">
+                              <div className="h-full bg-accent/60 rounded-full pipeline-progress-bar" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
