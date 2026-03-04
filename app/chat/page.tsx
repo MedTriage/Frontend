@@ -25,8 +25,22 @@ import {
   FileSearch,
   BookOpen,
   Scale,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Trash2,
+  MessageSquare,
 } from "lucide-react";
 import { Navbar } from "../components/Navbar";
+import {
+  getSessions,
+  getSession,
+  createSession,
+  saveSession,
+  deleteSession,
+  type ChatSession,
+  type SerializedMessage,
+} from "@/lib/chatStorage";
 
 // ----- Model definitions with inline SVG logos -----
 interface ModelOption {
@@ -176,6 +190,7 @@ function formatRagOutput(rag: RagOutput): string {
 interface TriageAPIResponse {
   user_input: string;
   intent_type: string;
+  title : string;
   intent_confidence: number;
   companion_output: string;
   rag_output: RagOutput | null;
@@ -192,6 +207,7 @@ async function getTriageResponse(
 ): Promise<{
   content: string;
   level: TriageLevel;
+  title?: string;
   intentType?: string;
   confidence?: number;
   pipeline?: PipelineMetadata;
@@ -285,6 +301,7 @@ async function getTriageResponse(
       return {
         content,
         level: 1,
+        title: data.title,
         intentType: data.intent_type,
         confidence: data.intent_confidence,
         pipeline: pipelineMeta,
@@ -303,6 +320,7 @@ async function getTriageResponse(
       return {
         content,
         level: 2,
+        title: data.title,
         intentType: data.intent_type,
         confidence: data.intent_confidence,
         pipeline: pipelineMeta,
@@ -313,6 +331,7 @@ async function getTriageResponse(
     return {
       content: data.companion_output || simulateLevel3Response(),
       level: 3,
+      title: data.title,
       intentType: data.intent_type,
       confidence: data.intent_confidence,
       pipeline: pipelineMeta,
@@ -398,6 +417,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [conversationTitle, setConversationTitle] = useState<string>("Untitled Conversation");
   const [mode, setMode] = useState<"triage" | "drugs">("triage");
   const [selectedModel, setSelectedModel] = useState<ModelOption>(MODEL_OPTIONS[0]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -407,6 +427,117 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const pipelineTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ─── Sidebar / session persistence ───
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  // Ref to track the session that owns the current in-flight request
+  const activeRequestSessionRef = useRef<string | null>(null);
+
+  // Load sessions from localStorage on mount
+  useEffect(() => {
+    const all = getSessions();
+    setSessions(all);
+    // Don't auto-load a session — start fresh (user can click a past one)
+  }, []);
+
+  // Auto-save current session to localStorage whenever messages change
+  useEffect(() => {
+    if (messages.length === 0) return;
+
+    const serialized: SerializedMessage[] = messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      triageLevel: m.triageLevel,
+      timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp as unknown as string,
+      status: m.status,
+      doctorNotes: m.doctorNotes,
+      errorType: m.errorType,
+      pipeline: m.pipeline,
+    }));
+
+    const highestTriage = messages.reduce<TriageLevel | undefined>((max, m) => {
+      if (!m.triageLevel) return max;
+      if (!max) return m.triageLevel;
+      return m.triageLevel > max ? m.triageLevel : max;
+    }, undefined);
+
+    if (currentSessionId) {
+      // Update existing session
+      const session: ChatSession = {
+        id: currentSessionId,
+        title: conversationTitle,
+        messages: serialized,
+        createdAt: getSession(currentSessionId)?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        highestTriageLevel: highestTriage,
+        isLocked,
+        model: selectedModel.id,
+      };
+      saveSession(session);
+      setSessions(getSessions());
+    } else {
+      // Create a new session
+      const session = createSession(selectedModel.id);
+      session.title = conversationTitle;
+      session.messages = serialized;
+      session.highestTriageLevel = highestTriage;
+      session.isLocked = isLocked;
+      saveSession(session);
+      setCurrentSessionId(session.id);
+      setSessions(getSessions());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, conversationTitle, isLocked]);
+
+  // Load a past session — blocked while a response is in-flight
+  const loadSession = useCallback((id: string) => {
+    if (isTyping) return; // prevent switching during an active request
+    const session = getSession(id);
+    if (!session) return;
+    setCurrentSessionId(session.id);
+    setConversationTitle(session.title);
+    setIsLocked(session.isLocked);
+    setMessages(
+      session.messages.map((m) => ({
+        ...m,
+        timestamp: new Date(m.timestamp),
+        triageLevel: m.triageLevel as TriageLevel | undefined,
+        errorType: m.errorType as Message["errorType"],
+        pipeline: m.pipeline as PipelineMetadata | undefined,
+      }))
+    );
+    const model = MODEL_OPTIONS.find((o) => o.id === session.model);
+    if (model) setSelectedModel(model);
+    setExpandedAudit(null);
+    setDeleteConfirm(null);
+  }, [isTyping]);
+
+  // Start a brand new session — blocked while a response is in-flight
+  const startNewSession = useCallback(() => {
+    if (isTyping) return; // prevent switching during an active request
+    setCurrentSessionId(null);
+    setMessages([]);
+    setConversationTitle("Untitled Conversation");
+    setIsLocked(false);
+    setInput("");
+    setExpandedAudit(null);
+    setDeleteConfirm(null);
+  }, [isTyping]);
+
+  // Delete a session
+  const handleDeleteSession = useCallback((id: string) => {
+    deleteSession(id);
+    setSessions(getSessions());
+    if (id === currentSessionId) {
+      startNewSession();
+    }
+    setDeleteConfirm(null);
+  }, [currentSessionId, startNewSession]);
 
   const hasMessages = messages.length > 0;
 
@@ -486,6 +617,11 @@ export default function ChatPage() {
     setPipelineStage(5);
     await new Promise((resolve) => setTimeout(resolve, 300));
     setIsTyping(false);
+
+    // Set conversation title only on the first query
+    if (response.title && conversationTitle === "Untitled Conversation") {
+      setConversationTitle(response.title);
+    }
 
     // Show error message in chat if something went wrong
     if (response.error) {
@@ -722,6 +858,164 @@ export default function ChatPage() {
     </div>
   );
 
+  // ─── Sidebar JSX ───
+  const sidebarJsx = (
+    <aside
+      className={`shrink-0 border-r border-border/30 bg-card/50 flex flex-col transition-all duration-300 ease-in-out overflow-hidden ${
+        sidebarOpen ? "w-72" : "w-0"
+      }`}
+    >
+      {sidebarOpen && (
+        <div className="flex flex-col h-full w-72 animate-sidebar-content">
+          {/* Sidebar header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-3.5 h-3.5 text-muted/60" />
+              <span className="font-mono text-[11px] uppercase tracking-wider text-muted/60">History</span>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-1 rounded-md text-muted/50 hover:text-foreground hover:bg-border/20 transition-colors"
+              title="Close sidebar"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* New chat button */}
+          <div className="px-3 py-3">
+            <button
+              onClick={startNewSession}
+              disabled={isTyping}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-border/50 bg-background text-xs text-muted transition-all font-mono ${
+                isTyping
+                  ? "opacity-40 cursor-not-allowed"
+                  : "hover:text-foreground hover:border-accent/30 hover:bg-accent/5"
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New Chat
+            </button>
+          </div>
+
+          {/* Session list */}
+          <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
+            {sessions.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-muted/30">
+                <MessageSquare className="w-6 h-6 mb-2" />
+                <p className="font-mono text-[10px]">No conversations yet</p>
+              </div>
+            )}
+
+            {sessions.map((session) => {
+              const isActive = session.id === currentSessionId;
+              const msgCount = session.messages.length;
+              const date = new Date(session.updatedAt);
+              const dateStr = date.toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+              });
+              const timeStr = date.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+
+              const triageDot = session.highestTriageLevel
+                ? session.highestTriageLevel === 3
+                  ? "bg-red-400"
+                  : session.highestTriageLevel === 2
+                    ? "bg-amber-400"
+                    : "bg-emerald-400"
+                : null;
+
+              return (
+                <div
+                  key={session.id}
+                  className={`group relative rounded-xl border transition-all ${isTyping && !isActive ? "opacity-40 cursor-not-allowed" : "cursor-pointer"} ${
+                    isActive
+                      ? "bg-accent/5 border-accent/20"
+                      : "border-transparent hover:bg-border/10 hover:border-border/30"
+                  }`}
+                >
+                  <button
+                    onClick={() => loadSession(session.id)}
+                    className="w-full text-left px-3 py-2.5"
+                  >
+                    <div className="flex items-start gap-2">
+                      {/* Triage dot */}
+                      {triageDot && (
+                        <span className={`w-1.5 h-1.5 rounded-full ${triageDot} mt-1.5 shrink-0`} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-medium truncate ${isActive ? "text-accent" : "text-foreground/80"}`}>
+                          {session.title}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="font-mono text-[10px] text-muted/40">
+                            {dateStr} · {timeStr}
+                          </span>
+                          <span className="font-mono text-[10px] text-muted/30">
+                            {msgCount} msg{msgCount !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Delete button */}
+                  {deleteConfirm === session.id ? (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 animate-fade-in">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteSession(session.id); }}
+                        className="px-2 py-1 rounded-md bg-red-400/10 text-red-400 text-[10px] font-mono hover:bg-red-400/20 transition-colors"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteConfirm(null); }}
+                        className="px-2 py-1 rounded-md bg-border/20 text-muted text-[10px] font-mono hover:bg-border/30 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(session.id); }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-muted/0 group-hover:text-muted/40 hover:text-red-400! hover:bg-red-400/10 transition-all"
+                      title="Delete conversation"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Sidebar footer */}
+          {sessions.length > 0 && (
+            <div className="px-4 py-3 border-t border-border/30">
+              <p className="font-mono text-[10px] text-muted/30 text-center">
+                {sessions.length} conversation{sessions.length !== 1 ? "s" : ""} · stored locally
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </aside>
+  );
+
+  // ─── Sidebar toggle button (shown when collapsed) ───
+  const sidebarToggleBtn = !sidebarOpen && (
+    <button
+      onClick={() => setSidebarOpen(true)}
+      className="fixed left-4 top-1/2 -translate-y-1/2 z-30 p-2 rounded-xl bg-card border border-border/50 text-muted/60 hover:text-foreground hover:border-accent/30 transition-all shadow-lg"
+      title="Open history"
+    >
+      <PanelLeftOpen className="w-4 h-4" />
+    </button>
+  );
+
   // ----- NEW SESSION (no messages yet) -----
   if (!hasMessages) {
     return (
@@ -731,49 +1025,54 @@ export default function ChatPage() {
           <Navbar alwaysVisible />
         </div>
 
-        {/* Centered new-session layout */}
-        <main className="flex-1 flex flex-col items-center justify-center px-6">
-          <div className="w-full max-w-xl space-y-6 animate-fade-in-up">
-            {/* Session header */}
-            <div className="space-y-4">
-              <h1 className="text-xl font-medium text-foreground/80">new session</h1>
-              <div className="flex flex-col gap-2 text-xs text-muted/50 font-mono">
-                <div className="flex items-center gap-2">
-                  <Stethoscope className="w-3.5 h-3.5" />
-                  <span>clinical triage · graduated autonomy</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Activity className="w-3.5 h-3.5" />
-                  <span>Detail your symptoms, upload relevant medical images, or ask a clinical question.</span>
+        <div className="flex-1 flex overflow-hidden">
+          {sidebarJsx}
+
+          {/* Centered new-session layout */}
+          <main className="flex-1 flex flex-col items-center justify-center px-6 relative">
+            {sidebarToggleBtn}
+            <div className="w-full max-w-xl space-y-6 animate-fade-in-up">
+              {/* Session header */}
+              <div className="space-y-4">
+                <h1 className="text-xl font-medium text-foreground/80">new session</h1>
+                <div className="flex flex-col gap-2 text-xs text-muted/50 font-mono">
+                  <div className="flex items-center gap-2">
+                    <Stethoscope className="w-3.5 h-3.5" />
+                    <span>clinical triage · graduated autonomy</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-3.5 h-3.5" />
+                    <span>Detail your symptoms, upload relevant medical images, or ask a clinical question.</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Starter prompts */}
-            <div className="flex flex-wrap gap-2">
-              {[
-                { text: "What are the standard symptoms of strep throat?", icon: Stethoscope },
-                { text: "Analyze this image of a skin rash.", icon: Brain },
-                { text: "How does this triage system keep my data safe?", icon: Activity },
-              ].map((prompt) => (
-                <button
-                  key={prompt.text}
-                  onClick={() => {
-                    setInput(prompt.text);
-                    textareaRef.current?.focus();
-                  }}
-                  className="group inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border/50 bg-card text-xs text-muted hover:text-foreground hover:border-accent/30 transition-all"
-                >
-                  <prompt.icon className="w-3.5 h-3.5 text-muted/50 group-hover:text-accent transition-colors shrink-0" />
-                  <span className="font-mono text-[11px] leading-snug">{prompt.text}</span>
-                </button>
-              ))}
-            </div>
+              {/* Starter prompts */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { text: "What are the standard symptoms of strep throat?", icon: Stethoscope },
+                  { text: "Analyze this image of a skin rash.", icon: Brain },
+                  { text: "How does this triage system keep my data safe?", icon: Activity },
+                ].map((prompt) => (
+                  <button
+                    key={prompt.text}
+                    onClick={() => {
+                      setInput(prompt.text);
+                      textareaRef.current?.focus();
+                    }}
+                    className="group inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border/50 bg-card text-xs text-muted hover:text-foreground hover:border-accent/30 transition-all"
+                  >
+                    <prompt.icon className="w-3.5 h-3.5 text-muted/50 group-hover:text-accent transition-colors shrink-0" />
+                    <span className="font-mono text-[11px] leading-snug">{prompt.text}</span>
+                  </button>
+                ))}
+              </div>
 
-            {/* Input card */}
-            {inputCardJsx(true)}
-          </div>
-        </main>
+              {/* Input card */}
+              {inputCardJsx(true)}
+            </div>
+          </main>
+        </div>
       </div>
     );
   }
@@ -786,16 +1085,18 @@ export default function ChatPage() {
         <Navbar alwaysVisible />
       </div>
 
-      {/* Chat Title */}
-      <div className="flex items-center justify-center px-6 py-2.5 border-b border-border/50 shrink-0 bg-background">
-        <h2 className="font-mono text-xs text-muted/70 truncate">Untitled Conversation</h2>
-      </div>
+      <div className="flex-1 flex overflow-hidden">
+        {sidebarJsx}
 
-      {/* Messages */}
-      <main className="flex-1 overflow-y-auto px-6 py-8">
-        <div className="max-w-2xl mx-auto space-y-4">
-          {messages.map((message) => (
-            <div key={message.id} className="animate-fade-in-up">
+        {/* Main chat area */}
+        <div className="flex-1 flex flex-col relative">
+          {sidebarToggleBtn}
+
+          {/* Messages */}
+          <main className="flex-1 overflow-y-auto px-6 py-8">
+            <div className="max-w-2xl mx-auto space-y-4">
+              {messages.map((message) => (
+                <div key={message.id} className="animate-fade-in-up">
               {/* System message */}
               {message.role === "system" && (
                 <div className="flex justify-center">
@@ -1250,6 +1551,8 @@ export default function ChatPage() {
       {/* Input — bottom docked */}
       <div className="shrink-0 border-t border-border/50 px-6 py-4 bg-background">
         {inputCardJsx()}
+      </div>
+        </div>
       </div>
     </div>
   );
