@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
       : level;
 
     return NextResponse.json({
+      title : data.title,
       user_input: data.user_input,
       intent_type: data.intent_type,
       intent_confidence: data.intent_confidence,

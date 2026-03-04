@@ -176,6 +176,7 @@ function formatRagOutput(rag: RagOutput): string {
 interface TriageAPIResponse {
   user_input: string;
   intent_type: string;
+  title : string;
   intent_confidence: number;
   companion_output: string;
   rag_output: RagOutput | null;
@@ -192,6 +193,7 @@ async function getTriageResponse(
 ): Promise<{
   content: string;
   level: TriageLevel;
+  title?: string;
   intentType?: string;
   confidence?: number;
   pipeline?: PipelineMetadata;
@@ -285,6 +287,7 @@ async function getTriageResponse(
       return {
         content,
         level: 1,
+        title: data.title,
         intentType: data.intent_type,
         confidence: data.intent_confidence,
         pipeline: pipelineMeta,
@@ -303,6 +306,7 @@ async function getTriageResponse(
       return {
         content,
         level: 2,
+        title: data.title,
         intentType: data.intent_type,
         confidence: data.intent_confidence,
         pipeline: pipelineMeta,
@@ -313,6 +317,7 @@ async function getTriageResponse(
     return {
       content: data.companion_output || simulateLevel3Response(),
       level: 3,
+      title: data.title,
       intentType: data.intent_type,
       confidence: data.intent_confidence,
       pipeline: pipelineMeta,
@@ -398,6 +403,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [conversationTitle, setConversationTitle] = useState<string>("Untitled Conversation");
   const [mode, setMode] = useState<"triage" | "drugs">("triage");
   const [selectedModel, setSelectedModel] = useState<ModelOption>(MODEL_OPTIONS[0]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -486,6 +492,11 @@ export default function ChatPage() {
     setPipelineStage(5);
     await new Promise((resolve) => setTimeout(resolve, 300));
     setIsTyping(false);
+
+    // Set conversation title only on the first query
+    if (response.title && conversationTitle === "Untitled Conversation") {
+      setConversationTitle(response.title);
+    }
 
     // Show error message in chat if something went wrong
     if (response.error) {
@@ -788,7 +799,7 @@ export default function ChatPage() {
 
       {/* Chat Title */}
       <div className="flex items-center justify-center px-6 py-2.5 border-b border-border/50 shrink-0 bg-background">
-        <h2 className="font-mono text-xs text-muted/70 truncate">Untitled Conversation</h2>
+        <h2 className="font-mono text-xs text-muted/70 truncate">{conversationTitle}</h2>
       </div>
 
       {/* Messages */}
