@@ -20,6 +20,7 @@ const NAV_LINKS = [
   { name: "Home", link: "/" },
   { name: "About", link: "/about" },
   { name: "Console", link: "/chat" },
+  { name: "Doctor", link: "/doctor" },
 ];
 
 export function Navbar({ alwaysVisible }: { alwaysVisible?: boolean } = {}) {

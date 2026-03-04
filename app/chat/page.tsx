@@ -87,6 +87,7 @@ interface Message {
   triageLevel?: TriageLevel;
   timestamp: Date;
   status?: "pending" | "verified" | "rejected";
+  doctorNotes?: string;
   errorType?: "api_offline" | "api_error" | "timeout" | "empty_response" | "unknown";
   pipeline?: PipelineMetadata;
 }
@@ -516,15 +517,76 @@ export default function ChatPage() {
       setIsLocked(true);
     }
 
-    // Simulate doctor verification for Level 2
+    // Route Level 2 to doctor dashboard for manual verification
     if (response.level === 2) {
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === aiMessage.id ? { ...m, status: "verified" } : m
-          )
-        );
+      // Submit to doctor review queue
+      try {
+        // Build full chat history including the current exchange
+        const fullHistory = [
+          ...messages
+            .filter((m) => m.role === "user" || m.role === "ai")
+            .map((m) => ({
+              role: m.role as "user" | "ai",
+              content: m.content,
+              triageLevel: m.triageLevel,
+              timestamp: m.timestamp.toISOString(),
+            })),
+          {
+            role: "user" as const,
+            content: userMessage.content,
+            timestamp: userMessage.timestamp.toISOString(),
+          },
+          {
+            role: "ai" as const,
+            content: response.content,
+            triageLevel: response.level,
+            timestamp: aiMessage.timestamp.toISOString(),
+          },
+        ];
+
+        await fetch("/api/doctor/cases", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            patientQuery: userMessage.content,
+            aiAssessment: response.content,
+            chatHistory: fullHistory,
+            pipeline: response.pipeline || undefined,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to submit case to doctor queue:", err);
+      }
+
+      // Poll doctor API to reflect verification status in chat
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch("/api/doctor/cases");
+          if (res.ok) {
+            const cases = await res.json();
+            const matchedCase = cases.find(
+              (c: { patientQuery: string; status: string }) =>
+                c.patientQuery === userMessage.content &&
+                c.status !== "pending"
+            );
+            if (matchedCase) {
+              clearInterval(pollInterval);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMessage.id
+                    ? { ...m, status: matchedCase.status, doctorNotes: matchedCase.doctorNotes || undefined }
+                    : m
+                )
+              );
+            }
+          }
+        } catch {
+          // Silently ignore polling errors
+        }
       }, 5000);
+
+      // Stop polling after 10 minutes
+      setTimeout(() => clearInterval(pollInterval), 600000);
     }
   };
 
@@ -883,7 +945,7 @@ export default function ChatPage() {
                               <>
                                 <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                                 <span className="text-emerald-400">
-                                  Verified by Dr. Patel — Prescription
+                                  Verified by Doctor — Prescription
                                   approved
                                 </span>
                               </>
@@ -897,6 +959,17 @@ export default function ChatPage() {
                               </>
                             )}
                           </div>
+                          {/* Doctor notes */}
+                          {message.doctorNotes && (
+                            <div className="mt-2 px-3 py-2 rounded-lg bg-card border border-border/40">
+                              <p className="font-mono text-[10px] text-muted/50 uppercase tracking-wider mb-1">
+                                Doctor Notes
+                              </p>
+                              <p className="text-xs text-muted/80 leading-relaxed whitespace-pre-line">
+                                {message.doctorNotes}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
 
