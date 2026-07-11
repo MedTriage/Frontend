@@ -2,44 +2,34 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Shield, Github, Linkedin } from "lucide-react";
+import { Github, Linkedin } from "lucide-react";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 const POLL_INTERVAL = 30_000;
 
-const FOOTER_COLUMNS = [
+const COLUMNS = [
   {
-    title: "Navigate",
+    title: "Product",
     links: [
-      { label: "Home", href: "/" },
-      { label: "About", href: "/about" },
-      { label: "Console", href: "/chat" },
+      { label: "Overview", href: "/" },
+      { label: "How it works", href: "/about" },
+      { label: "Consult", href: "/chat" },
+      { label: "Review queue", href: "/doctor" },
     ],
   },
   {
-    title: "Triage Levels",
+    title: "The scale",
     links: [
       { label: "Level 1 — Direct", href: "/about" },
-      { label: "Level 2 — Verified", href: "/about" },
-      { label: "Level 3 — Emergency", href: "/about" },
+      { label: "Level 2 — Physician-verified", href: "/about" },
+      { label: "Level 3 — Locked", href: "/about" },
     ],
   },
   {
-    title: "Agents",
+    title: "Legal",
     links: [
-      { label: "Companion", href: "/about" },
-      { label: "Intake", href: "/about" },
-      { label: "Research", href: "/about" },
-      { label: "Prescription", href: "/about" },
-    ],
-  },
-  {
-    title: "Resources",
-    links: [
-      { label: "Documentation", href: "/about" },
       { label: "Privacy", href: "/about" },
       { label: "Terms", href: "/about" },
-      { label: "Feedback", href: "/about" },
     ],
   },
 ];
@@ -74,37 +64,39 @@ export function Footer() {
   }, []);
 
   return (
-    <footer className="bg-footer-bg border-t border-border/50">
-      {/* ── Top section ── */}
-      <div className="max-w-6xl mx-auto px-8 pt-14 pb-10">
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-10">
-          {/* Brand column — spans 2 cols */}
-          <div className="col-span-2 space-y-4 pr-6">
-            <Link href="/" className="flex items-center gap-2.5">
-              <Shield className="w-5 h-5 text-accent" />
-              <span className="font-mono text-sm tracking-wider uppercase text-foreground">
+    <footer className="bg-footer-bg border-t border-border">
+      <div className="max-w-[1180px] mx-auto px-5 sm:px-8 py-14">
+        <div className="grid grid-cols-2 md:grid-cols-[1.6fr_repeat(3,1fr)] gap-10">
+          <div className="col-span-2 md:col-span-1">
+            <Link href="/" className="flex items-center gap-2.5 mb-4">
+              <span
+                className="flex flex-col justify-between w-[18px] h-[15px]"
+                aria-hidden
+              >
+                <span className="h-[3px] w-full bg-t1" />
+                <span className="h-[3px] w-[62%] bg-t2" />
+                <span className="h-[3px] w-[24%] bg-t3" />
+              </span>
+              <span className="data text-[13px] font-semibold tracking-[0.16em] uppercase">
                 MedTriage
               </span>
             </Link>
-            <p className="text-sm text-muted leading-relaxed max-w-xs">
-              AI&#8209;assisted clinical triage with graduated autonomy. For
-              informational purposes only&nbsp;— not a substitute for
-              professional medical advice.
+            <p className="text-[14px] text-muted leading-relaxed max-w-[38ch]">
+              Clinical triage with graduated autonomy. This is a research system
+              and it is not a substitute for professional medical advice. In an
+              emergency, call your local emergency number.
             </p>
           </div>
 
-          {/* Link columns */}
-          {FOOTER_COLUMNS.map((col) => (
-            <div key={col.title} className="space-y-4">
-              <h4 className="font-mono text-xs font-medium tracking-wider uppercase text-foreground">
-                {col.title}
-              </h4>
+          {COLUMNS.map((col) => (
+            <div key={col.title}>
+              <h4 className="label mb-4">{col.title}</h4>
               <ul className="space-y-2.5">
                 {col.links.map((link) => (
                   <li key={link.label}>
                     <Link
                       href={link.href}
-                      className="text-sm text-muted hover:text-foreground transition-colors"
+                      className="text-[14px] text-muted hover:text-foreground transition-colors"
                     >
                       {link.label}
                     </Link>
@@ -116,44 +108,42 @@ export function Footer() {
         </div>
       </div>
 
-      {/* ── Bottom bar ── */}
-      <div className="border-t border-border/40">
-        <div className="max-w-6xl mx-auto px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Copyright */}
-          <span className="font-mono text-[11px] text-muted/50">
-            © {new Date().getFullYear()} ~/MedTriage. Graduated Autonomy
-            Architecture.
+      <div className="border-t border-border">
+        <div className="max-w-[1180px] mx-auto px-5 sm:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <span className="data text-[11px] text-muted">
+            © {new Date().getFullYear()} MedTriage
           </span>
 
-          {/* Right side — API Badge + Socials */}
-          <div className="flex items-center gap-5">
-            {/* API Status Badge */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border/50 bg-background/60">
+          <div className="flex items-center gap-6">
+            {/* Achromatic on purpose: a service being down is an engineering fact,
+                not a clinical one, and the triage palette is not spent on it. The
+                square says something, the sentence says what. */}
+            <div className="flex items-center gap-2">
               <span
-                className={`w-2 h-2 rounded-full ${
+                className={`w-1.5 h-1.5 ${
                   apiStatus === "online"
-                    ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]"
+                    ? "bg-foreground"
                     : apiStatus === "offline"
-                      ? "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]"
-                      : "bg-amber-400 animate-pulse"
+                      ? "border border-muted"
+                      : "bg-muted blink"
                 }`}
               />
-              <span className="font-mono text-[11px] text-muted/70">
+              <span className="data text-[11px] text-muted">
                 {apiStatus === "online"
-                  ? "API Online"
+                  ? "Triage service online"
                   : apiStatus === "offline"
-                    ? "API Offline"
-                    : "Checking…"}
+                    ? "Triage service unreachable"
+                    : "Checking service"}
               </span>
             </div>
 
-            {/* Social Icons */}
             <div className="flex items-center gap-3">
               <a
                 href="https://github.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-muted/40 hover:text-muted transition-colors"
+                className="text-muted hover:text-foreground transition-colors"
+                aria-label="GitHub"
               >
                 <Github className="w-4 h-4" />
               </a>
@@ -161,7 +151,8 @@ export function Footer() {
                 href="https://linkedin.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-muted/40 hover:text-muted transition-colors"
+                className="text-muted hover:text-foreground transition-colors"
+                aria-label="LinkedIn"
               >
                 <Linkedin className="w-4 h-4" />
               </a>

@@ -31,7 +31,7 @@ export interface DoctorCase {
       confidence: number;
       sources_retrieved: number;
     } | null;
-    criticOutput?: {
+    orchestratorOutput?: {
       response: string;
       is_supported: boolean;
       issues: string[];
@@ -39,7 +39,7 @@ export interface DoctorCase {
       decision: string;
       confidence_adjusted: number;
     } | null;
-    criticDecision?: string | null;
+    orchestratorDecision?: string | null;
     guardianOutput?: {
       triage_level: string;
       reasoning: string;

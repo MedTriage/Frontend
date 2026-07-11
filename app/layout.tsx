@@ -1,23 +1,27 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Space_Mono } from "next/font/google";
+import { Archivo, IBM_Plex_Mono } from "next/font/google";
 import { ThemeProvider } from "./components/ThemeProvider";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+// Archivo: a grotesque with tight apertures — the voice of hospital wayfinding.
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const spaceMono = Space_Mono({
-  variable: "--font-space-mono",
+// Plex Mono carries every clinical number: levels, confidences, timestamps, ids.
+// It should read like a lab printout, because that is what it is.
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "MedTriage AI — Clinical Decision Support",
-  description: "Graduated autonomy medical triage and clinical decision system",
+  title: "MedTriage — clinical triage with graduated autonomy",
+  description:
+    "A triage system that gives up its own autonomy as your risk rises. Low-risk answers come straight back; anything clinical is verified by a physician; emergencies lock the AI out entirely.",
 };
 
 export default function RootLayout({
@@ -30,13 +34,11 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('medtriage-theme');document.documentElement.classList.add(t||'dark')}catch(e){document.documentElement.classList.add('dark')}})()`,
+            __html: `(function(){try{var t=localStorage.getItem('medtriage-theme');document.documentElement.classList.add(t||'light')}catch(e){document.documentElement.classList.add('light')}})()`,
           }}
         />
       </head>
-      <body
-        className={`${spaceGrotesk.variable} ${spaceMono.variable} antialiased`}
-      >
+      <body className={`${archivo.variable} ${plexMono.variable} antialiased`}>
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

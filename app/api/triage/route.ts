@@ -2,58 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 
-// Emergency keywords — if the intent is clinical AND these appear, escalate to Level 3
-const EMERGENCY_KEYWORDS = [
-  "chest pain",
-  "can't breathe",
-  "cannot breathe",
-  "difficulty breathing",
-  "stroke",
-  "unconscious",
-  "bleeding heavily",
-  "heart attack",
-  "seizure",
-  "anaphylaxis",
-  "choking",
-  "overdose",
-  "suicidal",
-  "severe bleeding",
-  "not breathing",
-  "collapsed",
-];
-
-/**
- * Classification logic based on the backend's intent_type:
- *   - "chitchat"        → Level 1 (companion responds directly)
- *   - "clinical_query"  → Level 2 (doctor verification required)
- *                          UNLESS emergency keywords detected → Level 3
- */
-function classifyLevel(intentType: string, userInput: string): 1 | 2 | 3 {
-  const intent = intentType.toLowerCase().trim();
-
-  // Chitchat → Level 1 (direct AI response)
-  if (intent === "chitchat" || intent === "chit-chat" || intent === "chit_chat") {
-    return 1;
-  }
-
-  // Clinical query → check for emergency keywords first
-  const lower = userInput.toLowerCase();
-  const isEmergency = EMERGENCY_KEYWORDS.some((kw) => lower.includes(kw));
-
-  if (isEmergency) return 3;
-
-  // All other clinical queries → Level 2 (doctor verification)
-  return 2;
-}
+// Without this, a serverless deploy caps the handler well below the client's 300s
+// patience and kills the request mid-pipeline. Ignored by `next dev`/`next start`,
+// which have no such limit.
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text, chat_history } = body;
+    const { conversation_id, text, chat_history } = body;
 
     if (!text || typeof text !== "string") {
       return NextResponse.json(
         { error: "Missing required field: text" },
+        { status: 400 }
+      );
+    }
+
+    // The backend keys the Scribe's persistent medical record on this, and validates
+    // it against ^[A-Za-z0-9_-]{1,64}$ because it becomes a filename.
+    if (!conversation_id || typeof conversation_id !== "string") {
+      return NextResponse.json(
+        { error: "Missing required field: conversation_id" },
         { status: 400 }
       );
     }
@@ -65,7 +35,11 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({ text, chat_history: chat_history || [] }),
+      body: JSON.stringify({
+        conversation_id,
+        text,
+        chat_history: chat_history || [],
+      }),
     });
 
     if (!backendResponse.ok) {
@@ -79,27 +53,33 @@ export async function POST(request: NextRequest) {
 
     const data = await backendResponse.json();
 
-    // Determine triage level from intent_type + user input for emergency detection
-    const level = classifyLevel(data.intent_type || "", text);
-
-    // Use guardian triage level if present, otherwise fall back to local classification
+    // Triage level comes from the Guardian, which is the only component allowed to
+    // assign it — it applies deterministic hard rules (emergency, escalation, safety
+    // risk, prescription/diagnostic floors) that the LLM cannot downgrade. Never
+    // re-derive the level here: a client-side guess could contradict the Guardian and
+    // show a patient a response the backend locked.
     const guardianLevel = data.guardian_output?.triage_level;
-    const finalLevel = guardianLevel
-      ? parseInt(guardianLevel.replace("level_", ""), 10) as 1 | 2 | 3
-      : level;
+    const triageLevel = guardianLevel
+      ? (parseInt(guardianLevel.replace("level_", ""), 10) as 1 | 2 | 3)
+      : 2; // Guardian output missing => fail safe to physician review, never level 1.
 
     return NextResponse.json({
-      title : data.title,
+      title: data.title,
       user_input: data.user_input,
       intent_type: data.intent_type,
       intent_confidence: data.intent_confidence,
-      companion_output: data.companion_output,
+      // All three retrieval branches are forwarded, not just the vector one. The
+      // point the product is making — that independent sources were consulted and
+      // may have disagreed — cannot be shown if only one of them reaches the client.
       rag_output: data.rag_output || null,
-      critic_output: data.critic_output || null,
-      critic_decision: data.critic_decision || null,
-      critic_response: data.critic_response || null,
+      kgrag_output: data.kgrag_output || null,
+      mcp_output: data.mcp_output || null,
+      orchestrator_output: data.orchestrator_output || null,
+      orchestrator_decision: data.orchestrator_decision || null,
+      orchestrator_response: data.orchestrator_response || null,
       guardian_output: data.guardian_output || null,
-      triage_level: finalLevel,
+      is_emergency: data.is_emergency ?? false,
+      triage_level: triageLevel,
     });
   } catch (error) {
     console.error("API route error:", error);
