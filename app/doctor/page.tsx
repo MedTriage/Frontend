@@ -2,42 +2,31 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  Activity,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Stethoscope,
-  FileSearch,
-  BookOpen,
-  Scale,
-  Shield,
-  ShieldCheck,
-  ShieldAlert,
-  Lock,
+  Check,
+  X,
   ChevronRight,
-  RefreshCw,
-  ClipboardList,
+  Clock,
   CircleAlert,
-  AlertTriangle,
-  Send,
+  Stethoscope,
 } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 
-// ─── Types ───
-
-interface RagOutput {
-  probable_diagnosis: string;
-  differentials: string[];
-  recommended_actions: string[];
-  citations: string[];
-  confidence: number;
-  sources_retrieved: number;
+interface SourceOutput {
+  probable_diagnosis?: string | null;
+  differentials?: string[];
+  recommended_actions?: string[];
+  citations?: string[];
+  confidence?: number;
+  sources_retrieved?: number;
+  error?: string;
+  status?: string;
 }
 
-interface CriticOutput {
+interface OrchestratorOutput {
   response: string;
   is_supported: boolean;
   issues: string[];
+  conflicts?: string[];
   safety_risk: string;
   decision: string;
   confidence_adjusted: number;
@@ -70,16 +59,51 @@ interface DoctorCase {
   pipeline?: {
     intentType?: string;
     intentConfidence?: number;
-    ragOutput?: RagOutput | null;
-    criticOutput?: CriticOutput | null;
-    criticDecision?: string | null;
+    ragOutput?: SourceOutput | null;
+    kgragOutput?: SourceOutput | null;
+    mcpOutput?: SourceOutput | null;
+    orchestratorOutput?: OrchestratorOutput | null;
+    orchestratorDecision?: string | null;
     guardianOutput?: GuardianOutput | null;
   };
 }
 
 type FilterStatus = "all" | "pending" | "verified" | "rejected";
 
-// ─── Component ───
+/* Status keeps colour because status here IS clinical: a pending case is a held
+   Level 2, which is why it is amber — the same amber the patient is looking at
+   while they wait. Approved releases it; rejected flags it. */
+const STATUS = {
+  pending: { label: "Waiting on you", text: "text-t2", rule: "bg-t2" },
+  verified: { label: "Approved", text: "text-t1", rule: "bg-t1" },
+  rejected: { label: "Rejected", text: "text-t3", rule: "bg-t3" },
+} as const;
+
+const SOURCES = [
+  { key: "rag", name: "Clinical guidelines" },
+  { key: "kgrag", name: "Related conditions" },
+  { key: "mcp", name: "FDA & PubMed" },
+] as const;
+
+function readSource(o?: SourceOutput | null): { finding: string; reported: boolean } {
+  if (!o) return { finding: "Not consulted", reported: false };
+  if (o.error) return { finding: "Couldn’t be reached", reported: false };
+  if (o.status === "not_implemented")
+    return { finding: "Not available", reported: false };
+  const dx = (o.probable_diagnosis || "").trim();
+  if (!dx || /insufficient/i.test(dx))
+    return { finding: "Nothing relevant found", reported: false };
+  return { finding: dx, reported: true };
+}
+
+function timeAgo(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.floor(hrs / 24)}d`;
+}
 
 export default function DoctorDashboard() {
   const [cases, setCases] = useState<DoctorCase[]>([]);
@@ -127,9 +151,7 @@ export default function DoctorDashboard() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setCases((prev) =>
-          prev.map((c) => (c.id === updated.id ? updated : c))
-        );
+        setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       }
     } catch (err) {
       console.error("Failed to update case:", err);
@@ -142,699 +164,384 @@ export default function DoctorDashboard() {
     filter === "all" ? cases : cases.filter((c) => c.status === filter);
 
   const pendingCount = cases.filter((c) => c.status === "pending").length;
-  const verifiedCount = cases.filter((c) => c.status === "verified").length;
-  const rejectedCount = cases.filter((c) => c.status === "rejected").length;
+
+  const FILTERS: { key: FilterStatus; label: string; count: number }[] = [
+    { key: "all", label: "All", count: cases.length },
+    { key: "pending", label: "Waiting", count: pendingCount },
+    {
+      key: "verified",
+      label: "Approved",
+      count: cases.filter((c) => c.status === "verified").length,
+    },
+    {
+      key: "rejected",
+      label: "Rejected",
+      count: cases.filter((c) => c.status === "rejected").length,
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Header */}
-      <div className="shrink-0 border-b border-border/30 bg-background">
-        <Navbar alwaysVisible />
-      </div>
+      <Navbar />
 
-      {/* Main content */}
-      <main className="flex-1 px-6 py-8">
-        <div className="max-w-5xl mx-auto">
-          {/* Page header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-amber-400/10 flex items-center justify-center">
-                <Stethoscope className="w-5 h-5 text-amber-400" />
-              </div>
-              <div>
-                <h1 className="text-xl font-medium text-foreground">
-                  Doctor Dashboard
-                </h1>
-                <p className="font-mono text-xs text-muted/60">
-                  Review and verify Level-2 prescriptions
-                </p>
-              </div>
+      <main className="flex-1">
+        <div className="max-w-[1000px] mx-auto px-5 sm:px-8 py-12">
+          {/* ── The one number that matters ── */}
+          <div className="flex flex-wrap items-end justify-between gap-6 pb-6 border-b border-foreground">
+            <div>
+              <p className="label mb-4">Review queue</p>
+              <h1 className="display text-[2.2rem] sm:text-[2.8rem]">
+                {pendingCount === 0
+                  ? "Nothing waiting."
+                  : `${pendingCount} ${pendingCount === 1 ? "case needs" : "cases need"} you.`}
+              </h1>
             </div>
+            <p className="data text-[11px] text-muted">
+              Refreshes every 10s
+            </p>
           </div>
 
-          {/* Stats row */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-4 h-4 text-amber-400" />
-                <span className="font-mono text-xs text-amber-400 uppercase tracking-wider">
-                  Pending
-                </span>
-              </div>
-              <p className="text-2xl font-medium text-amber-400">
-                {pendingCount}
-              </p>
-            </div>
-            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span className="font-mono text-xs text-emerald-400 uppercase tracking-wider">
-                  Verified
-                </span>
-              </div>
-              <p className="text-2xl font-medium text-emerald-400">
-                {verifiedCount}
-              </p>
-            </div>
-            <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <XCircle className="w-4 h-4 text-red-400" />
-                <span className="font-mono text-xs text-red-400 uppercase tracking-wider">
-                  Rejected
-                </span>
-              </div>
-              <p className="text-2xl font-medium text-red-400">
-                {rejectedCount}
-              </p>
-            </div>
+          {/* ── Filters ── */}
+          <div className="flex flex-wrap gap-px bg-border border border-border mt-8 mb-2">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                aria-pressed={filter === f.key}
+                className={`flex-1 min-w-[7rem] px-4 py-2.5 flex items-baseline justify-between gap-3 transition-colors ${
+                  filter === f.key
+                    ? "bg-accent text-on-accent"
+                    : "bg-background text-muted hover:text-foreground"
+                }`}
+              >
+                <span className="text-[13px] font-medium">{f.label}</span>
+                <span className="data text-[11px] tabular-nums">{f.count}</span>
+              </button>
+            ))}
           </div>
 
-          {/* Filter bar */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              {(
-                [
-                  { key: "all", label: "All Cases", count: cases.length },
-                  { key: "pending", label: "Pending", count: pendingCount },
-                  { key: "verified", label: "Verified", count: verifiedCount },
-                  { key: "rejected", label: "Rejected", count: rejectedCount },
-                ] as const
-              ).map((f) => (
-                <button
-                  key={f.key}
-                  onClick={() => setFilter(f.key)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all ${
-                    filter === f.key
-                      ? "bg-accent/15 text-accent border border-accent/25"
-                      : "text-muted hover:text-foreground hover:bg-border/20 border border-transparent"
-                  }`}
-                >
-                  {f.label}
-                  <span
-                    className={`text-[10px] ${
-                      filter === f.key ? "text-accent/60" : "text-muted/40"
-                    }`}
-                  >
-                    {f.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setLoading(true);
-                fetchCases();
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono text-muted hover:text-foreground hover:bg-border/20 transition-all"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </button>
-          </div>
-
-          {/* Cases list */}
-          {loading && cases.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <RefreshCw className="w-6 h-6 text-muted/40 animate-spin mb-4" />
-              <p className="font-mono text-xs text-muted/50">
-                Loading cases...
-              </p>
+          {/* ── The worklist ── */}
+          {loading ? (
+            <div className="py-16">
+              <p className="label mb-3">Loading the queue</p>
+              <div className="relative h-[2px] bg-border overflow-hidden max-w-xs">
+                <span className="sweep absolute inset-y-0 left-0 w-1/3 bg-foreground" />
+              </div>
             </div>
           ) : filteredCases.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <ClipboardList className="w-8 h-8 text-muted/20 mb-4" />
-              <p className="font-mono text-sm text-muted/40">
+            <div className="py-16 max-w-[52ch]">
+              <p className="text-[15px] text-muted leading-relaxed">
                 {filter === "all"
-                  ? "No Level-2 cases submitted yet"
-                  : `No ${filter} cases`}
-              </p>
-              <p className="font-mono text-xs text-muted/30 mt-1">
-                Level-2 clinical queries from the triage console will appear
-                here
+                  ? "No cases yet. A case lands here the moment the guardian holds an answer for a doctor — that is, any time the system reaches for a drug, a test, or a diagnosis."
+                  : `Nothing under “${FILTERS.find((f) => f.key === filter)?.label}”.`}
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="border-t border-border">
               {filteredCases.map((c) => {
-                const isExpanded = expandedCase === c.id;
-                const isAuditExpanded = expandedAudit === c.id;
+                const st = STATUS[c.status];
+                const open = expandedCase === c.id;
+                const p = c.pipeline;
+                const busy = updatingCase === c.id;
+                const conf = p?.orchestratorOutput?.confidence_adjusted;
 
                 return (
-                  <div
-                    key={c.id}
-                    className={`rounded-xl border transition-all ${
-                      c.status === "pending"
-                        ? "border-amber-400/20 bg-card"
-                        : c.status === "verified"
-                          ? "border-emerald-400/20 bg-card"
-                          : "border-red-400/20 bg-card"
-                    }`}
-                  >
-                    {/* Case header */}
+                  <div key={c.id} className="border-b border-border">
+                    {/* Row */}
                     <button
-                      onClick={() =>
-                        setExpandedCase(isExpanded ? null : c.id)
-                      }
-                      className="w-full flex items-center gap-4 p-4 text-left"
+                      onClick={() => setExpandedCase(open ? null : c.id)}
+                      aria-expanded={open}
+                      className="w-full text-left py-4 grid grid-cols-[1.25rem_minmax(0,1fr)_auto] sm:grid-cols-[1.25rem_minmax(0,1fr)_6rem_7rem_3rem] gap-x-4 gap-y-1 items-center hover:bg-card transition-colors"
                     >
-                      {/* Status icon */}
-                      <div
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                          c.status === "pending"
-                            ? "bg-amber-400/10"
-                            : c.status === "verified"
-                              ? "bg-emerald-400/10"
-                              : "bg-red-400/10"
-                        }`}
-                      >
-                        {c.status === "pending" && (
-                          <Clock className="w-5 h-5 text-amber-400 animate-pulse" />
-                        )}
-                        {c.status === "verified" && (
-                          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                        )}
-                        {c.status === "rejected" && (
-                          <XCircle className="w-5 h-5 text-red-400" />
-                        )}
-                      </div>
+                      <span className={`block w-[3px] h-8 ${st.rule}`} />
 
-                      {/* Case info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono ${
-                              c.status === "pending"
-                                ? "bg-amber-400/10 text-amber-400"
-                                : c.status === "verified"
-                                  ? "bg-emerald-400/10 text-emerald-400"
-                                  : "bg-red-400/10 text-red-400"
-                            }`}
-                          >
-                            <Activity className="w-2.5 h-2.5" />
-                            Level 2 — {c.status}
-                          </span>
-                          <span className="font-mono text-[10px] text-muted/40">
-                            {c.id}
-                          </span>
-                        </div>
-                        <p className="text-sm text-foreground truncate">
+                      <span className="min-w-0">
+                        <span className="block text-[15px] truncate">
                           {c.patientQuery}
-                        </p>
-                        <p className="font-mono text-[10px] text-muted/40 mt-0.5">
-                          Submitted{" "}
-                          {new Date(c.createdAt).toLocaleString([], {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      </div>
+                        </span>
+                        <span className={`data text-[11px] ${st.text} sm:hidden`}>
+                          {st.label}
+                        </span>
+                      </span>
 
-                      {/* Expand chevron */}
-                      <ChevronRight
-                        className={`w-4 h-4 text-muted/40 transition-transform duration-200 shrink-0 ${
-                          isExpanded ? "rotate-90" : ""
-                        }`}
-                      />
+                      <span className="data hidden sm:block text-[12px] text-muted tabular-nums">
+                        {typeof conf === "number"
+                          ? `${(conf * 100).toFixed(0)}%`
+                          : "—"}
+                      </span>
+
+                      <span
+                        className={`data hidden sm:block text-[12px] ${st.text}`}
+                      >
+                        {st.label}
+                      </span>
+
+                      <span className="data hidden sm:flex items-center justify-end gap-2 text-[11px] text-muted">
+                        {timeAgo(c.createdAt)}
+                        <ChevronRight
+                          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`}
+                        />
+                      </span>
                     </button>
 
-                    {/* Expanded detail */}
-                    {isExpanded && (
-                      <div className="px-4 pb-4 pt-0 border-t border-border/30 animate-fade-in-up">
-                        {/* Full conversation history */}
-                        {c.chatHistory && c.chatHistory.length > 0 ? (
-                          <div className="mt-4 mb-4">
-                            <p className="font-mono text-[10px] text-muted/50 uppercase tracking-wider mb-2">
-                              Full Conversation ({c.chatHistory.length} messages)
+                    {/* Case sheet */}
+                    {open && (
+                      <div className="pb-8 rise">
+                        <div className="border border-border bg-card">
+                          {/* What the patient asked */}
+                          <div className="px-5 py-4 border-b border-border">
+                            <p className="label mb-2">The patient asked</p>
+                            <p className="text-[15px] leading-relaxed">
+                              {c.patientQuery}
                             </p>
-                            <div className="rounded-xl border border-border/30 bg-background/50 p-3 space-y-2 max-h-96 overflow-y-auto">
-                              {c.chatHistory.map((msg, idx) => (
-                                <div
-                                  key={idx}
-                                  className={`flex ${
-                                    msg.role === "user"
-                                      ? "justify-end"
-                                      : "justify-start"
-                                  }`}
-                                >
-                                  <div
-                                    className={`max-w-[80%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
-                                      msg.role === "user"
-                                        ? "bg-accent/10 border border-accent/20 rounded-br-sm"
-                                        : "bg-card border border-border/50 rounded-bl-sm"
-                                    }`}
-                                  >
-                                    {/* Role label */}
-                                    <div className="flex items-center gap-1.5 mb-1">
-                                      <span
-                                        className={`font-mono text-[9px] uppercase tracking-wider ${
-                                          msg.role === "user"
-                                            ? "text-accent/60"
-                                            : "text-muted/50"
-                                        }`}
-                                      >
-                                        {msg.role === "user"
-                                          ? "Patient"
-                                          : "AI"}
-                                      </span>
-                                      {msg.triageLevel && (
-                                        <span
-                                          className={`px-1 py-0.5 rounded text-[9px] font-mono ${
-                                            msg.triageLevel === 1
-                                              ? "bg-emerald-400/10 text-emerald-400"
-                                              : msg.triageLevel === 2
-                                                ? "bg-amber-400/10 text-amber-400"
-                                                : "bg-red-400/10 text-red-400"
-                                          }`}
-                                        >
-                                          L{msg.triageLevel}
-                                        </span>
-                                      )}
-                                      {msg.timestamp && (
-                                        <span className="font-mono text-[9px] text-muted/30 ml-auto">
-                                          {new Date(
-                                            msg.timestamp
-                                          ).toLocaleTimeString([], {
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                          })}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="whitespace-pre-line">
-                                      {msg.content}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
                           </div>
-                        ) : (
-                          /* Fallback: show just the triggering query + assessment */
-                          <>
-                            <div className="mt-4 mb-4">
-                              <p className="font-mono text-[10px] text-muted/50 uppercase tracking-wider mb-1.5">
-                                Patient Query
-                              </p>
-                              <div className="px-4 py-3 rounded-xl bg-accent/5 border border-accent/10">
-                                <p className="text-sm leading-relaxed">
-                                  {c.patientQuery}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="mb-4">
-                              <p className="font-mono text-[10px] text-amber-400/70 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                                <ClipboardList className="w-3 h-3" />
-                                AI-Generated Prescription
-                              </p>
-                              <div className="px-4 py-3 rounded-xl bg-amber-400/5 border border-amber-400/15">
-                                <p className="text-sm leading-relaxed whitespace-pre-line">
-                                  {c.aiAssessment}
-                                </p>
-                              </div>
-                            </div>
-                          </>
-                        )}
 
-                        {/* Pipeline audit trail */}
-                        {c.pipeline && (
-                          <div className="mb-4">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpandedAudit(
-                                  isAuditExpanded ? null : c.id
-                                );
-                              }}
-                              className="flex items-center gap-2 w-full text-left group mb-2"
-                            >
-                              <ChevronRight
-                                className={`w-3 h-3 text-muted/50 transition-transform duration-200 ${
-                                  isAuditExpanded ? "rotate-90" : ""
-                                }`}
-                              />
-                              <Shield
-                                className={`w-3 h-3 ${
-                                  c.pipeline.guardianOutput?.ai_lock
-                                    ? "text-red-400"
-                                    : c.pipeline.guardianOutput
-                                          ?.requires_doctor
-                                      ? "text-amber-400"
-                                      : "text-emerald-400"
-                                }`}
-                              />
-                              <span className="font-mono text-[10px] text-muted/60 group-hover:text-muted transition-colors">
-                                Guardian Audit Trail
-                              </span>
-                              {c.pipeline.criticOutput && (
-                                <span className="ml-auto font-mono text-[10px] text-muted/40">
-                                  {(
-                                    c.pipeline.criticOutput
-                                      .confidence_adjusted * 100
-                                  ).toFixed(0)}
-                                  % confidence
+                          {/* What is being held */}
+                          <div className="px-5 py-4 border-b border-border">
+                            <p className="label mb-2">
+                              Held for your approval
+                            </p>
+                            <p className="text-[15px] leading-relaxed whitespace-pre-line">
+                              {c.aiAssessment}
+                            </p>
+                          </div>
+
+                          {/* The evidence — same three sources the patient sees */}
+                          {p && (
+                            <div className="px-5 py-4 border-b border-border">
+                              <button
+                                onClick={() =>
+                                  setExpandedAudit(
+                                    expandedAudit === c.id ? null : c.id
+                                  )
+                                }
+                                aria-expanded={expandedAudit === c.id}
+                                className="inline-flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
+                              >
+                                <ChevronRight
+                                  className={`w-3.5 h-3.5 transition-transform ${expandedAudit === c.id ? "rotate-90" : ""}`}
+                                />
+                                <span className="data text-[11px]">
+                                  {expandedAudit === c.id
+                                    ? "Hide the evidence"
+                                    : "Show the evidence"}
                                 </span>
-                              )}
-                            </button>
+                              </button>
 
-                            {isAuditExpanded && (
-                              <div className="ml-5 space-y-2.5 animate-fade-in-up">
-                                {/* Intent Classification */}
-                                <div className="flex items-start gap-2.5">
-                                  <div className="w-5 h-5 rounded-md bg-emerald-400/10 flex items-center justify-center shrink-0 mt-0.5">
-                                    <FileSearch className="w-3 h-3 text-emerald-400" />
+                              {expandedAudit === c.id && (
+                                <div className="mt-4 rise">
+                                  <div className="border-t border-border">
+                                    {SOURCES.map((src) => {
+                                      const raw =
+                                        src.key === "rag"
+                                          ? p.ragOutput
+                                          : src.key === "kgrag"
+                                            ? p.kgragOutput
+                                            : p.mcpOutput;
+                                      const { finding, reported } =
+                                        readSource(raw);
+                                      return (
+                                        <div
+                                          key={src.key}
+                                          className="grid sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] gap-x-5 gap-y-1 py-2.5 border-b border-border"
+                                        >
+                                          <p className="text-[13px] font-medium">
+                                            {src.name}
+                                          </p>
+                                          <p
+                                            className={`text-[13px] ${reported ? "" : "text-muted italic"}`}
+                                          >
+                                            {finding}
+                                          </p>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-mono text-[10px] text-emerald-400 uppercase tracking-wider">
-                                      Intent Classification
-                                    </p>
-                                    <p className="text-xs text-muted/70 mt-0.5">
-                                      {c.pipeline.intentType || "unknown"}
-                                      {c.pipeline.intentConfidence != null && (
-                                        <span className="text-muted/40 ml-1.5">
-                                          (
-                                          {(
-                                            c.pipeline.intentConfidence * 100
-                                          ).toFixed(0)}
-                                          % confidence)
-                                        </span>
-                                      )}
-                                    </p>
-                                  </div>
-                                </div>
 
-                                {/* RAG Retrieval */}
-                                {c.pipeline.ragOutput && (
-                                  <div className="flex items-start gap-2.5">
-                                    <div className="w-5 h-5 rounded-md bg-blue-400/10 flex items-center justify-center shrink-0 mt-0.5">
-                                      <BookOpen className="w-3 h-3 text-blue-400" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="font-mono text-[10px] text-blue-400 uppercase tracking-wider">
-                                        RAG Retrieval
-                                      </p>
-                                      <p className="text-xs text-muted/70 mt-0.5">
-                                        {
-                                          c.pipeline.ragOutput
-                                            .probable_diagnosis
-                                        }
-                                      </p>
-                                      <p className="text-[10px] text-muted/40 mt-0.5">
-                                        {
-                                          c.pipeline.ragOutput
-                                            .sources_retrieved
-                                        }{" "}
-                                        sources ·{" "}
-                                        {(
-                                          c.pipeline.ragOutput.confidence * 100
-                                        ).toFixed(0)}
-                                        % confidence
-                                      </p>
-                                      {c.pipeline.ragOutput.differentials
-                                        ?.length > 0 && (
-                                        <div className="mt-1.5 flex flex-wrap gap-1">
-                                          {c.pipeline.ragOutput.differentials.map(
+                                  {p.ragOutput?.differentials &&
+                                    p.ragOutput.differentials.length > 0 && (
+                                      <div className="mt-4">
+                                        <p className="label mb-2">
+                                          Differentials
+                                        </p>
+                                        <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+                                          {p.ragOutput.differentials.map(
                                             (d, i) => (
-                                              <span
+                                              <li
                                                 key={i}
-                                                className="px-1.5 py-0.5 rounded bg-blue-400/5 text-[10px] text-blue-400/70 font-mono"
+                                                className="text-[13px] text-muted pl-2.5 border-l border-border"
                                               >
                                                 {d}
-                                              </span>
+                                              </li>
                                             )
                                           )}
-                                        </div>
-                                      )}
-                                      {c.pipeline.ragOutput
-                                        .recommended_actions?.length > 0 && (
-                                        <div className="mt-2">
-                                          <p className="font-mono text-[10px] text-blue-400/50 mb-1">
-                                            Recommended Actions:
-                                          </p>
-                                          {c.pipeline.ragOutput.recommended_actions.map(
-                                            (a, i) => (
-                                              <p
-                                                key={i}
-                                                className="text-[10px] text-muted/60 pl-2"
-                                              >
-                                                • {a}
-                                              </p>
-                                            )
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Critic Review */}
-                                {c.pipeline.criticOutput && (
-                                  <div className="flex items-start gap-2.5">
-                                    <div className="w-5 h-5 rounded-md bg-violet-400/10 flex items-center justify-center shrink-0 mt-0.5">
-                                      <Scale className="w-3 h-3 text-violet-400" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="font-mono text-[10px] text-violet-400 uppercase tracking-wider">
-                                        Critic Review
-                                      </p>
-                                      <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                        <span
-                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
-                                            c.pipeline.criticOutput
-                                              .decision === "approve"
-                                              ? "bg-emerald-400/10 text-emerald-400"
-                                              : c.pipeline.criticOutput
-                                                    .decision === "reject"
-                                                ? "bg-red-400/10 text-red-400"
-                                                : "bg-amber-400/10 text-amber-400"
-                                          }`}
-                                        >
-                                          {c.pipeline.criticOutput.decision ===
-                                          "approve" ? (
-                                            <CheckCircle2 className="w-2.5 h-2.5" />
-                                          ) : c.pipeline.criticOutput
-                                              .decision === "reject" ? (
-                                            <XCircle className="w-2.5 h-2.5" />
-                                          ) : (
-                                            <CircleAlert className="w-2.5 h-2.5" />
-                                          )}
-                                          {c.pipeline.criticOutput.decision}
-                                        </span>
-                                        <span
-                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
-                                            c.pipeline.criticOutput
-                                              .safety_risk === "low"
-                                              ? "bg-emerald-400/10 text-emerald-400"
-                                              : c.pipeline.criticOutput
-                                                    .safety_risk === "high"
-                                                ? "bg-red-400/10 text-red-400"
-                                                : "bg-amber-400/10 text-amber-400"
-                                          }`}
-                                        >
-                                          risk:{" "}
-                                          {c.pipeline.criticOutput.safety_risk}
-                                        </span>
+                                        </ul>
                                       </div>
-                                      {c.pipeline.criticOutput.issues
-                                        ?.length > 0 && (
-                                        <div className="mt-1.5">
-                                          {c.pipeline.criticOutput.issues.map(
+                                    )}
+
+                                  {p.orchestratorOutput?.issues &&
+                                    p.orchestratorOutput.issues.length > 0 && (
+                                      <div className="mt-4">
+                                        <p className="label mb-2">
+                                          Flagged in review
+                                        </p>
+                                        <ul className="space-y-1.5">
+                                          {p.orchestratorOutput.issues.map(
                                             (issue, i) => (
-                                              <p
+                                              <li
                                                 key={i}
-                                                className="text-[10px] text-amber-400/70 flex items-center gap-1"
+                                                className="text-[13px] text-t2 flex gap-2"
                                               >
-                                                <CircleAlert className="w-2.5 h-2.5 shrink-0" />
-                                                {issue}
-                                              </p>
+                                                <CircleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                                <span>{issue}</span>
+                                              </li>
                                             )
                                           )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Guardian Decision */}
-                                {c.pipeline.guardianOutput && (
-                                  <div className="flex items-start gap-2.5">
-                                    <div
-                                      className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
-                                        c.pipeline.guardianOutput.ai_lock
-                                          ? "bg-red-400/10"
-                                          : c.pipeline.guardianOutput
-                                                .requires_doctor
-                                            ? "bg-amber-400/10"
-                                            : "bg-emerald-400/10"
-                                      }`}
-                                    >
-                                      {c.pipeline.guardianOutput.ai_lock ? (
-                                        <ShieldAlert className="w-3 h-3 text-red-400" />
-                                      ) : c.pipeline.guardianOutput
-                                          .requires_doctor ? (
-                                        <ShieldCheck className="w-3 h-3 text-amber-400" />
-                                      ) : (
-                                        <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                                      )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p
-                                        className={`font-mono text-[10px] uppercase tracking-wider ${
-                                          c.pipeline.guardianOutput.ai_lock
-                                            ? "text-red-400"
-                                            : c.pipeline.guardianOutput
-                                                  .requires_doctor
-                                              ? "text-amber-400"
-                                              : "text-emerald-400"
-                                        }`}
-                                      >
-                                        Guardian Decision
-                                      </p>
-                                      <p className="text-xs text-muted/70 mt-0.5">
-                                        {
-                                          c.pipeline.guardianOutput
-                                            .reasoning
-                                        }
-                                      </p>
-                                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-400/10 text-[10px] text-amber-400 font-mono">
-                                          {c.pipeline.guardianOutput.triage_level.replace(
-                                            "_",
-                                            " "
-                                          )}
-                                        </span>
-                                        {c.pipeline.guardianOutput
-                                          .requires_doctor && (
-                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-400/10 text-[10px] text-amber-400 font-mono">
-                                            <Stethoscope className="w-2.5 h-2.5" />
-                                            requires physician
-                                          </span>
-                                        )}
-                                        {c.pipeline.guardianOutput
-                                          .ai_lock && (
-                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-400/10 text-[10px] text-red-400 font-mono">
-                                            <Lock className="w-2.5 h-2.5" />
-                                            AI locked
-                                          </span>
-                                        )}
+                                        </ul>
                                       </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                                    )}
 
-                        {/* Doctor notes (existing) */}
-                        {c.doctorNotes && c.status !== "pending" && (
-                          <div className="mb-4">
-                            <p className="font-mono text-[10px] text-muted/50 uppercase tracking-wider mb-1.5">
-                              Doctor Notes
-                            </p>
-                            <div className="px-4 py-3 rounded-xl bg-card border border-border/50">
-                              <p className="text-sm leading-relaxed text-muted/80">
-                                {c.doctorNotes}
+                                  {p.guardianOutput && (
+                                    <div className="mt-4">
+                                      <p className="label mb-2">
+                                        Why it was held
+                                      </p>
+                                      <p className="text-[14px] leading-relaxed border-l-2 border-l-t2 pl-3.5">
+                                        {p.guardianOutput.reasoning}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Transcript */}
+                          {c.chatHistory?.length > 0 && (
+                            <div className="px-5 py-4 border-b border-border">
+                              <p className="label mb-3">Conversation</p>
+                              <div className="space-y-3">
+                                {c.chatHistory.map((m, i) => (
+                                  <div
+                                    key={i}
+                                    className={`text-[14px] leading-relaxed ${
+                                      m.role === "user"
+                                        ? "pl-3.5 border-l-2 border-l-border"
+                                        : "pl-3.5 border-l-2 border-l-t2"
+                                    }`}
+                                  >
+                                    <p className="label mb-1">
+                                      {m.role === "user" ? "Patient" : "System"}
+                                    </p>
+                                    <p className="whitespace-pre-line">
+                                      {m.content}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Decide */}
+                          {c.status === "pending" ? (
+                            <div className="px-5 py-4">
+                              <label
+                                htmlFor={`notes-${c.id}`}
+                                className="label block mb-2"
+                              >
+                                Note to the patient — optional
+                              </label>
+                              <textarea
+                                id={`notes-${c.id}`}
+                                value={notesMap[c.id] || ""}
+                                onChange={(e) =>
+                                  setNotesMap((prev) => ({
+                                    ...prev,
+                                    [c.id]: e.target.value,
+                                  }))
+                                }
+                                rows={3}
+                                placeholder="Anything the patient should know alongside your decision."
+                                className="w-full bg-background border border-border px-3 py-2.5 text-[14px] leading-relaxed placeholder:text-muted/70 focus:outline-none focus:border-foreground transition-colors resize-none"
+                              />
+
+                              <div className="flex flex-wrap gap-2 mt-3">
+                                <button
+                                  onClick={() =>
+                                    handleUpdateCase(c.id, "verified")
+                                  }
+                                  disabled={busy}
+                                  className="h-10 px-4 inline-flex items-center gap-2 bg-accent text-on-accent text-[13px] font-medium hover:opacity-85 disabled:opacity-40 transition-opacity"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  {busy ? "Sending…" : "Approve and send"}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    handleUpdateCase(c.id, "rejected")
+                                  }
+                                  disabled={busy}
+                                  className="h-10 px-4 inline-flex items-center gap-2 border border-border text-t3 text-[13px] font-medium hover:border-t3 disabled:opacity-40 transition-colors"
+                                >
+                                  <X className="w-4 h-4" />
+                                  Reject
+                                </button>
+                              </div>
+
+                              <p className="text-[13px] text-muted mt-3 leading-relaxed max-w-[56ch]">
+                                The patient is waiting on this and cannot see the
+                                assessment until you decide.
                               </p>
                             </div>
-                          </div>
-                        )}
-
-                        {/* Action area for pending cases */}
-                        {c.status === "pending" && (
-                          <div className="mt-4 pt-4 border-t border-border/30">
-                            {/* Notes input */}
-                            <div className="mb-3">
-                              <label className="font-mono text-[10px] text-muted/50 uppercase tracking-wider mb-1.5 block">
-                                Doctor Notes (optional)
-                              </label>
-                              <div className="relative">
-                                <textarea
-                                  value={notesMap[c.id] || ""}
-                                  onChange={(e) =>
-                                    setNotesMap((prev) => ({
-                                      ...prev,
-                                      [c.id]: e.target.value,
-                                    }))
-                                  }
-                                  placeholder="Add clinical notes, modifications to the prescription, or reason for rejection..."
-                                  className="w-full bg-background border border-border/50 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted/30 focus:outline-none focus:border-accent/30 focus:ring-1 focus:ring-accent/10 resize-none font-sans leading-relaxed min-h-20"
-                                  rows={3}
-                                />
+                          ) : (
+                            <div className="px-5 py-4">
+                              <div
+                                className={`inline-flex items-center gap-2 ${st.text}`}
+                              >
+                                {c.status === "verified" ? (
+                                  <Check className="w-4 h-4" />
+                                ) : (
+                                  <X className="w-4 h-4" />
+                                )}
+                                <span className="data text-[12px]">
+                                  {st.label} · {timeAgo(c.updatedAt)} ago
+                                </span>
                               </div>
-                            </div>
 
-                            {/* Action buttons */}
-                            <div className="flex items-center gap-3">
-                              <button
-                                onClick={() =>
-                                  handleUpdateCase(c.id, "verified")
-                                }
-                                disabled={updatingCase === c.id}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-400/15 text-emerald-400 border border-emerald-400/25 text-xs font-medium hover:bg-emerald-400/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                {updatingCase === c.id
-                                  ? "Updating..."
-                                  : "Approve Prescription"}
-                              </button>
-                              <button
-                                onClick={() =>
-                                  handleUpdateCase(c.id, "rejected")
-                                }
-                                disabled={updatingCase === c.id}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-400/10 text-red-400 border border-red-400/20 text-xs font-medium hover:bg-red-400/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                <XCircle className="w-3.5 h-3.5" />
-                                Reject
-                              </button>
+                              {c.doctorNotes && (
+                                <div className="mt-3 pt-3 border-t border-border">
+                                  <p className="label mb-1.5">
+                                    Your note to the patient
+                                  </p>
+                                  <p className="text-[14px] leading-relaxed whitespace-pre-line">
+                                    {c.doctorNotes}
+                                  </p>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        )}
-
-                        {/* Status footer for reviewed cases */}
-                        {c.status !== "pending" && (
-                          <div
-                            className={`mt-4 pt-3 border-t flex items-center gap-2 font-mono text-xs ${
-                              c.status === "verified"
-                                ? "border-emerald-400/20 text-emerald-400"
-                                : "border-red-400/20 text-red-400"
-                            }`}
-                          >
-                            {c.status === "verified" ? (
-                              <>
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                Prescription approved —{" "}
-                                {new Date(c.updatedAt).toLocaleString([], {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </>
-                            ) : (
-                              <>
-                                <XCircle className="w-3.5 h-3.5" />
-                                Rejected —{" "}
-                                {new Date(c.updatedAt).toLocaleString([], {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </>
-                            )}
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
                 );
               })}
             </div>
+          )}
+
+          {/* A queue is a promise to somebody. Say so. */}
+          {!loading && pendingCount > 0 && (
+            <p className="flex items-center gap-2 mt-8 text-[13px] text-muted">
+              <Clock className="w-3.5 h-3.5" />
+              {pendingCount === 1 ? "One patient is" : `${pendingCount} patients are`}{" "}
+              waiting on a decision.
+            </p>
+          )}
+          {!loading && cases.length > 0 && pendingCount === 0 && (
+            <p className="flex items-center gap-2 mt-8 text-[13px] text-muted">
+              <Stethoscope className="w-3.5 h-3.5" />
+              Queue clear. Nobody is waiting.
+            </p>
           )}
         </div>
       </main>

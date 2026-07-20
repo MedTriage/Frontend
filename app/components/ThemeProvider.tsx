@@ -17,15 +17,15 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  theme: "dark",
+  theme: "light",
   toggle: () => {},
 });
 
 /* ── helpers ── */
 
 function getThemeFromDOM(): Theme {
-  if (typeof document === "undefined") return "dark";
-  return document.documentElement.classList.contains("light") ? "light" : "dark";
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
 function setThemeOnDOM(theme: Theme) {
@@ -57,7 +57,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const theme = useSyncExternalStore(
     subscribe,
     getThemeFromDOM,
-    () => "dark" as Theme // SSR snapshot
+    () => "light" as Theme // SSR snapshot — paper is the default stock
   );
 
   // On mount, reconcile localStorage → DOM (the inline <script> already set

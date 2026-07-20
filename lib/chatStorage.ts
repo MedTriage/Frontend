@@ -15,8 +15,8 @@ export interface PipelineMetadata {
   intentType?: string;
   intentConfidence?: number;
   ragOutput?: unknown;
-  criticOutput?: unknown;
-  criticDecision?: string | null;
+  orchestratorOutput?: unknown;
+  orchestratorDecision?: string | null;
   guardianOutput?: unknown;
 }
 

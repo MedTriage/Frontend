@@ -1,42 +1,56 @@
 @import "tailwindcss";
 
-:root {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --muted: #a1a1aa;
-  --border: #27272a;
-  --card: #111113;
-  --accent: #6ee7b7;
-  --accent-muted: #065f46;
-  --danger: #ef4444;
-  --warning: #f59e0b;
-  --footer-bg: #0f0f12;
-}
+/*
+  MedTriage — "Chart"
 
+  One rule governs this palette: colour is clinical data, never decoration.
+  The interface is achromatic — paper, ink, graphite, hairline rules. The only
+  chroma in the entire product is the triage scale (t1/t2/t3), so if a user sees
+  colour, it means risk. That is why buttons and links are ink, not green.
+*/
+
+:root,
 .light {
-  --background: #fafafa;
-  --foreground: #09090b;
-  --muted: #71717a;
-  --border: #e4e4e7;
-  --card: #ffffff;
-  --accent: #059669;
-  --accent-muted: #d1fae5;
-  --danger: #dc2626;
-  --warning: #d97706;
-  --footer-bg: #f0f0f2;
+  --background: #f4f6f5; /* chart stock — cool, not cream */
+  --card: #ffffff; /* the field you write in */
+  --foreground: #14181b; /* ink */
+  --muted: #5c6672; /* pencil */
+  --border: #dce0df; /* hairline rule */
+  --footer-bg: #eceeed;
+
+  /* Accent is ink, not a hue. Buttons are stamped, not lit. */
+  --accent: #14181b;
+  --accent-muted: #e3e7e6;
+  --on-accent: #f4f6f5;
+
+  /* The triage scale — the only colour in the system. */
+  --t1: #17795a; /* direct to patient */
+  --t2: #a96a00; /* physician-verified */
+  --t3: #c0362c; /* emergency — AI locked */
+
+  --danger: var(--t3);
+  --warning: var(--t2);
 }
 
 .dark {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --muted: #a1a1aa;
-  --border: #27272a;
-  --card: #111113;
-  --accent: #6ee7b7;
-  --accent-muted: #065f46;
-  --danger: #ef4444;
-  --warning: #f59e0b;
-  --footer-bg: #0f0f12;
+  --background: #14181b;
+  --card: #1a1f23;
+  --foreground: #e8ecea;
+  --muted: #868f99;
+  --border: #272d33;
+  --footer-bg: #111417;
+
+  --accent: #e8ecea;
+  --accent-muted: #272d33;
+  --on-accent: #14181b;
+
+  /* Lifted for contrast on dark stock; same clinical meaning. */
+  --t1: #46c39b;
+  --t2: #dfa33a;
+  --t3: #f26558;
+
+  --danger: var(--t3);
+  --warning: var(--t2);
 }
 
 @theme inline {
@@ -47,50 +61,100 @@
   --color-card: var(--card);
   --color-accent: var(--accent);
   --color-accent-muted: var(--accent-muted);
+  --color-on-accent: var(--on-accent);
   --color-danger: var(--danger);
   --color-warning: var(--warning);
   --color-footer-bg: var(--footer-bg);
-  --font-sans: var(--font-space-grotesk);
-  --font-mono: var(--font-space-mono);
+
+  --color-t1: var(--t1);
+  --color-t2: var(--t2);
+  --color-t3: var(--t3);
+
+  --font-sans: var(--font-archivo);
+  --font-mono: var(--font-plex-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-space-grotesk), sans-serif;
-  transition: background 0.3s ease, color 0.3s ease;
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Custom scrollbar */
+/* Display type is set tight and heavy; the mono labels are set wide and small.
+   That collision is the voice of the page. */
+.display {
+  font-weight: 700;
+  letter-spacing: -0.033em;
+  line-height: 0.98;
+}
+
+.label {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+/* Data — confidences, ids, timestamps, levels. Anything a clinician would read
+   off a printout is monospaced. */
+.data {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--foreground);
+  color: var(--background);
+}
+
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border);
+  border: 3px solid var(--background);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* Keyboard focus must always be visible. */
+:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
   border-radius: 2px;
 }
 
-/* Typing animation */
-@keyframes pulse-dot {
-  0%, 80%, 100% { opacity: 0.3; }
-  40% { opacity: 1; }
+/* ─────────────────────────────────────────────
+   The signature: the autonomy ledger.
+   Bars are drawn, not filled — they grow from the rule.
+   ───────────────────────────────────────────── */
+@keyframes draw-bar {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
-.typing-dot {
-  animation: pulse-dot 1.4s infinite ease-in-out both;
+.bar-draw {
+  transform-origin: left center;
+  animation: draw-bar 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.typing-dot:nth-child(1) { animation-delay: -0.32s; }
-.typing-dot:nth-child(2) { animation-delay: -0.16s; }
-.typing-dot:nth-child(3) { animation-delay: 0s; }
 
-/* Fade in animation */
-@keyframes fade-in-up {
+@keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -98,153 +162,81 @@ body {
   }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.4s ease-out forwards;
+.rise {
+  animation: rise 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* The overrule. A line drawn through a triage level the model asked for and did
+   not get — the single gesture the whole product is about. */
+@keyframes strike {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.6s ease-out forwards;
+.strike {
+  transform-origin: left center;
+  animation: strike 420ms cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 
-/* Staggered children */
-.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
-.stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
-.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
-.stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
-.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
-.stagger-children > *:nth-child(6) { animation-delay: 0.3s; }
-
-/* Subtle glow */
-.glow-accent {
-  box-shadow: 0 0 20px rgba(110, 231, 183, 0.08);
+/* A caret that blinks like a chart plotter idling. Used only while the pipeline
+   is working, so motion in this UI always means "the system is thinking". */
+@keyframes blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0.15;
+  }
 }
 
-/* Workflow pipeline animations */
-@keyframes flow-down {
+.blink {
+  animation: blink 1.1s steps(1, end) infinite;
+}
+
+/* Sweep along a rule — the pipeline's only motion. */
+@keyframes sweep {
   0% {
-    top: 0;
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
+    transform: translateX(-100%);
   }
   100% {
-    top: calc(100% - 8px);
-    opacity: 0;
+    transform: translateX(400%);
   }
 }
 
-.workflow-connector {
-  position: relative;
-  width: 2px;
-  height: 40px;
-  overflow: visible;
+.sweep {
+  animation: sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* Static line */
-.workflow-connector::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  background: var(--border);
-  opacity: 0.5;
-}
-
-/* Animated glowing dot */
-.workflow-connector::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translateX(-50%);
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 10px var(--accent), 0 0 20px rgba(110, 231, 183, 0.3);
-  animation: flow-down 2.2s ease-in-out infinite;
-  z-index: 2;
-}
-
-/* Stagger each connector's pulse so they cascade */
-.workflow-step:nth-child(1) .workflow-connector::after { animation-delay: 0s; }
-.workflow-step:nth-child(2) .workflow-connector::after { animation-delay: 0.35s; }
-.workflow-step:nth-child(3) .workflow-connector::after { animation-delay: 0.7s; }
-.workflow-step:nth-child(4) .workflow-connector::after { animation-delay: 1.05s; }
-.workflow-step:nth-child(5) .workflow-connector::after { animation-delay: 1.4s; }
-
-@keyframes icon-ring-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(110, 231, 183, 0.2);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-  50% {
-    box-shadow: 0 0 0 8px rgba(110, 231, 183, 0);
+  .bar-draw {
+    transform: scaleX(1);
   }
-}
-
-.workflow-icon-active {
-  animation: icon-ring-pulse 3s ease-in-out infinite;
-}
-
-/* Pipeline progress indicator animations */
-@keyframes pipeline-progress {
-  0% { width: 0%; }
-  100% { width: 100%; }
-}
-
-.pipeline-progress-bar {
-  animation: pipeline-progress 2.5s ease-in-out infinite;
-}
-
-@keyframes pipeline-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(110, 231, 183, 0.3); }
-  50% { box-shadow: 0 0 0 6px rgba(110, 231, 183, 0); }
-}
-
-.pipeline-icon-pulse {
-  animation: pipeline-pulse 2s ease-in-out infinite;
-}
-
-/* Audit trail expand animation */
-@keyframes audit-expand {
-  from {
-    opacity: 0;
-    max-height: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    max-height: 600px;
-    transform: translateY(0);
-  }
-}
-
-.animate-audit-expand {
-  animation: audit-expand 0.3s ease-out forwards;
-  overflow: hidden;
-}
-
-/* Sidebar content fade-in */
-@keyframes sidebar-content-in {
-  from {
-    opacity: 0;
-    transform: translateX(-8px);
-  }
-  to {
-    opacity: 1;
+  /* The sweep would otherwise be animated off-screen, leaving the pipeline lanes
+     as empty tracks — which reads as broken rather than calm. Park it at the
+     start so an in-progress lane still shows as in-progress. */
+  .sweep {
     transform: translateX(0);
+    opacity: 0.55;
   }
-}
-
-.animate-sidebar-content {
-  animation: sidebar-content-in 0.2s ease-out 0.1s both;
+  .blink {
+    opacity: 1;
+  }
+  /* The strike must survive: it carries meaning, not decoration. Without it the
+     overruled level would read as still standing. */
+  .strike {
+    transform: scaleX(1);
+  }
 }
