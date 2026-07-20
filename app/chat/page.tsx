@@ -184,6 +184,10 @@ interface SourceOutput {
 interface OrchestratorOutput {
   response: string;
   is_supported: boolean;
+  // False when no source matched and the answer came from general medical knowledge
+  // rather than retrieved evidence. The audit panel says so plainly instead of
+  // implying a sourced assessment.
+  evidence_grounded?: boolean;
   issues: string[];
   conflicts?: string[];
   safety_risk: string;
@@ -1296,6 +1300,21 @@ export default function ChatPage() {
                       <Confidence
                         value={p.orchestratorOutput.confidence_adjusted}
                       />
+                    </div>
+                  )}
+
+                  {/* When nothing was retrieved, the answer came from general medical
+                      knowledge, not from the sources below. Saying so is the honest
+                      version of the confidence bar — it stops a sourced-looking panel
+                      from vouching for an unsourced answer. */}
+                  {p.orchestratorOutput?.evidence_grounded === false && (
+                    <div className="px-4 py-3 border-b border-border">
+                      <p className="text-[13px] text-muted leading-relaxed max-w-[56ch]">
+                        No source matched this query, so this was answered from general
+                        medical knowledge rather than retrieved evidence. Treat it as
+                        general guidance and see a clinician or pharmacist for anything
+                        specific.
+                      </p>
                     </div>
                   )}
 
