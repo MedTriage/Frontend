@@ -23,6 +23,11 @@ import {
 } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 import {
+  EvidenceTrace,
+  type Explanation,
+  type SourceStatus,
+} from "../components/EvidenceTrace";
+import {
   getSessions,
   getSession,
   createSession,
@@ -96,7 +101,21 @@ interface Message {
   doctorNotes?: string;
   errorType?: "api_offline" | "api_error" | "timeout" | "empty_response" | "unknown";
   pipeline?: PipelineMetadata;
+  // Patient-facing account of how the turn was decided. Sanitised on the backend; it
+  // carries counts, bands and an outcome sentence, never a diagnosis or a source name.
+  explanation?: Explanation | null;
 }
+
+// A source resolves, and can resolve AGAIN — the orchestrator's bounded re-retrieval
+// loop re-runs a branch, which emits a second event for the same slot. The live graph
+// has to be able to walk a source backwards to "searching".
+const EMPTY_EXPLANATION: Explanation = {
+  sources: [{ status: "pending" }, { status: "pending" }, { status: "pending" }],
+  sources_reported: 0,
+  agreement: { band: "", value: 0 },
+  certainty: { band: "", value: 0 },
+  outcome: { triage_level: 2, requires_doctor: true, reason: "" },
+};
 
 /* Colour is the only chroma in this interface, and it means exactly one thing:
    how far the system is allowed to act on its own. */
@@ -216,12 +235,75 @@ interface TriageAPIResponse {
   guardian_output: GuardianOutput | null;
   is_emergency: boolean;
   triage_level: TriageLevel;
+  explanation: Explanation | null;
+}
+
+type ProgressEvent =
+  | { type: "stage"; stage: string }
+  | {
+      type: "source";
+      index: number;
+      status: SourceStatus;
+      differential?: Explanation["differential"];
+    }
+  | {
+      type: "fusion";
+      agreement: Explanation["agreement"];
+      certainty: Explanation["certainty"];
+      differential?: Explanation["differential"];
+    }
+  | { type: "error"; message: string }
+  | ({ type: "done" } & TriageAPIResponse);
+
+/* Read the SSE body, forwarding progress and returning the terminal payload.
+
+   Frames arrive split across chunk boundaries, so the tail of a partial frame is held
+   back in `buffer` until its blank-line terminator shows up. */
+async function readTriageStream(
+  res: Response,
+  onProgress: (event: ProgressEvent) => void
+): Promise<TriageAPIResponse | null> {
+  const reader = res.body?.getReader();
+  if (!reader) return null;
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let final: TriageAPIResponse | null = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+
+    for (const frame of frames) {
+      const line = frame.split("\n").find((l) => l.startsWith("data: "));
+      if (!line) continue;
+
+      let event: ProgressEvent;
+      try {
+        event = JSON.parse(line.slice(6));
+      } catch {
+        continue;
+      }
+
+      if (event.type === "done") {
+        final = event;
+      }
+      onProgress(event);
+    }
+  }
+
+  return final;
 }
 
 async function getTriageResponse(
   text: string,
   conversationId: string,
-  chatHistory: { role: string; content: string }[] = []
+  chatHistory: { role: string; content: string }[] = [],
+  onProgress: (event: ProgressEvent) => void = () => {}
 ): Promise<{
   content: string;
   level: TriageLevel;
@@ -229,6 +311,7 @@ async function getTriageResponse(
   intentType?: string;
   confidence?: number;
   pipeline?: PipelineMetadata;
+  explanation?: Explanation | null;
   error?: { type: Message["errorType"]; message: string };
 }> {
   try {
@@ -239,7 +322,7 @@ async function getTriageResponse(
     // retrieval round on top of that.
     const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-    const res = await fetch("/api/triage", {
+    const res = await fetch("/api/triage/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -289,7 +372,22 @@ async function getTriageResponse(
       };
     }
 
-    const data: TriageAPIResponse = await res.json();
+    const data = await readTriageStream(res, onProgress);
+
+    // The stream ended without a terminal event — the pipeline died mid-turn. Treated
+    // as an empty response rather than a transport error, because the request itself
+    // succeeded.
+    if (!data) {
+      return {
+        content: "",
+        level: 1,
+        error: {
+          type: "empty_response",
+          message:
+            "The pipeline stopped before it finished. No assessment was produced, so none is being displayed. Try again.",
+        },
+      };
+    }
 
     // The orchestrator's synthesized response is the ONLY patient-facing text. Raw
     // rag_output is deliberately not counted as content — it has not been through the
@@ -339,6 +437,7 @@ async function getTriageResponse(
         intentType: data.intent_type,
         confidence: data.intent_confidence,
         pipeline: pipelineMeta,
+        explanation: data.explanation,
       };
     }
 
@@ -350,6 +449,7 @@ async function getTriageResponse(
         intentType: data.intent_type,
         confidence: data.intent_confidence,
         pipeline: pipelineMeta,
+        explanation: data.explanation,
       };
     }
 
@@ -362,6 +462,7 @@ async function getTriageResponse(
       intentType: data.intent_type,
       confidence: data.intent_confidence,
       pipeline: pipelineMeta,
+      explanation: data.explanation,
     };
   } catch (error) {
     console.error("Triage API error:", error);
@@ -488,11 +589,12 @@ export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState<ModelOption>(MODEL_OPTIONS[0]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [pipelineStage, setPipelineStage] = useState(0);
+  // The evidence graph while the turn is still running. Null between turns.
+  const [liveExplanation, setLiveExplanation] = useState<Explanation | null>(null);
   const [expandedAudit, setExpandedAudit] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
-  const pipelineTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // ─── The index (past consultations) / session persistence ───
   // Switching consultations is a rare action, so it does not get permanent screen.
@@ -671,13 +773,10 @@ export default function ChatPage() {
     setIsTyping(true);
     setPipelineStage(0);
 
-    // The request genuinely spends nearly all of its time consulting the three
-    // sources — two of them are live network calls. So the indicator moves off
-    // "reading" quickly and then honestly *holds* on "consulting" until the
-    // response actually lands, rather than marching through invented steps.
-    const timers: NodeJS.Timeout[] = [];
-    timers.push(setTimeout(() => setPipelineStage(1), 600));
-    pipelineTimerRef.current = timers[0];
+    // The stages are driven by the backend's own progress events now — the turn
+    // reports when it has read the message, when each source lands, and when they are
+    // weighed. Nothing here is on a timer, so the indicator cannot claim a step the
+    // pipeline has not actually reached.
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -690,17 +789,48 @@ export default function ChatPage() {
         content: m.content,
       }));
 
-    const response = await getTriageResponse(userMessage.content, conversationId, chatHistory);
+    setLiveExplanation(EMPTY_EXPLANATION);
 
-    timers.forEach(clearTimeout);
+    const response = await getTriageResponse(
+      userMessage.content,
+      conversationId,
+      chatHistory,
+      (event) => {
+        if (event.type === "stage") {
+          setPipelineStage(1); // the message has been read; sources are being consulted
+        } else if (event.type === "source") {
+          setLiveExplanation((prev) => {
+            const base = prev ?? EMPTY_EXPLANATION;
+            const sources = base.sources.map((s, i) =>
+              i === event.index ? { status: event.status } : s
+            );
+            return {
+              ...base,
+              sources,
+              sources_reported: sources.filter((s) => s.status === "reported").length,
+              // The ontology branch carries the shortlist with it, so the candidates
+              // appear as soon as it lands rather than at the end of the turn.
+              differential: event.differential ?? base.differential,
+            };
+          });
+        } else if (event.type === "fusion") {
+          setPipelineStage(2); // the sources have actually been weighed against each other
+          setLiveExplanation((prev) => ({
+            ...(prev ?? EMPTY_EXPLANATION),
+            agreement: event.agreement,
+            certainty: event.certainty,
+            differential: event.differential ?? prev?.differential,
+          }));
+        }
+      }
+    );
 
-    // The response is in: the sources have reported, so walk out through the two
-    // steps that genuinely happen after them.
-    setPipelineStage(2); // reconciling
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    setPipelineStage(3); // ruling
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    setPipelineStage(4); // done
+    setLiveExplanation(null);
+
+    // The response is in, so the two steps after the fusion — the reconciliation and
+    // the triage ruling — have both genuinely completed by now.
+    setPipelineStage(3);
+    setPipelineStage(4);
     setIsTyping(false);
 
     if (response.title && conversationTitle === "Untitled Conversation") {
@@ -727,6 +857,7 @@ export default function ChatPage() {
       timestamp: new Date(),
       status: response.level === 2 ? "pending" : undefined,
       pipeline: response.pipeline,
+      explanation: response.explanation,
     };
 
     setMessages((prev) => [...prev, aiMessage]);
@@ -1235,6 +1366,8 @@ export default function ChatPage() {
             {message.content}
           </div>
 
+          {message.explanation && <EvidenceTrace explanation={message.explanation} />}
+
           {/* Level 2 — where the case stands with the doctor */}
           {message.triageLevel === 2 && message.status && (
             <div className="mt-3.5 border border-border bg-card px-3 py-2.5">
@@ -1641,7 +1774,16 @@ export default function ChatPage() {
             </div>
           ))}
 
-          {isTyping && <div className="rise">{working}</div>}
+          {isTyping && (
+            <div className="rise">
+              {working}
+              {/* The same graph that will sit under the answer, filling in as the
+                  sources actually report. The wait becomes the explanation. */}
+              {liveExplanation && (
+                <EvidenceTrace explanation={liveExplanation} live />
+              )}
+            </div>
+          )}
 
           <div ref={messagesEndRef} />
         </div>

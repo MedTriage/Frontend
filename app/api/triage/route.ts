@@ -80,6 +80,11 @@ export async function POST(request: NextRequest) {
       guardian_output: data.guardian_output || null,
       is_emergency: data.is_emergency ?? false,
       triage_level: triageLevel,
+      // The patient-facing explanation. Already sanitised server-side by explain.py —
+      // it carries counts, bands and an outcome sentence, never a diagnosis, a source
+      // name, or a raw belief value. Forwarded as-is; do not enrich it here from the
+      // branch outputs above, which are doctor-facing only.
+      explanation: data.explanation || null,
     });
   } catch (error) {
     console.error("API route error:", error);
