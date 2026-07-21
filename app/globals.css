@@ -30,6 +30,19 @@
 
   --danger: var(--t3);
   --warning: var(--t2);
+
+  /* The differential graph, and nowhere else.
+
+     This is the one authorised exception to "colour means risk". It is deliberately
+     NOT --t1: a candidate under consideration must not borrow the visual meaning of
+     "safe, answered directly". Pushed toward teal and away from t1's forest green so
+     the two never read as the same signal, and quarantined inside the graph, where no
+     triage colour ever appears. */
+  --node-live: #0d9b86;
+  --node-out: #b4beba;
+  /* What the patient actually described. Distinct from both the candidate green and
+     the triage scale, so the anchors of the graph never read as a verdict. */
+  --node-finding: #4a5a7a;
 }
 
 .dark {
@@ -51,6 +64,11 @@
 
   --danger: var(--t3);
   --warning: var(--t2);
+
+  /* Lifted for contrast on dark stock; same quarantine, same meaning. */
+  --node-live: #35d6ba;
+  --node-out: #3d474e;
+  --node-finding: #8fa4c9;
 }
 
 @theme inline {
@@ -65,6 +83,10 @@
   --color-danger: var(--danger);
   --color-warning: var(--warning);
   --color-footer-bg: var(--footer-bg);
+
+  --color-node-live: var(--node-live);
+  --color-node-out: var(--node-out);
+  --color-node-finding: var(--node-finding);
 
   --color-t1: var(--t1);
   --color-t2: var(--t2);
@@ -199,6 +221,22 @@ body {
   animation: blink 1.1s steps(1, end) infinite;
 }
 
+/* The evidence graph. Edges are drawn from source to fusion in the same gesture as
+   the ledger bars — the line is traced, never revealed. `pathLength: 1` normalises
+   every edge so a long curve and a short one draw at the same rate. */
+@keyframes draw-edge {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.edge-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-edge 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+
 /* Sweep along a rule — the pipeline's only motion. */
 @keyframes sweep {
   0% {
@@ -233,6 +271,11 @@ body {
   }
   .blink {
     opacity: 1;
+  }
+  /* An undrawn edge is an invisible edge, which would read as "no connection" rather
+     than "not animated". Land it fully drawn. */
+  .edge-draw {
+    stroke-dashoffset: 0;
   }
   /* The strike must survive: it carries meaning, not decoration. Without it the
      overruled level would read as still standing. */
