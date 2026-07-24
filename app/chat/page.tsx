@@ -1711,7 +1711,7 @@ export default function ChatPage() {
   if (!hasMessages) {
     return (
       <div className="h-screen bg-background text-foreground flex flex-col">
-        <Navbar alwaysVisible />
+        <Navbar />
         {chartBand}
 
         <main className="flex-1 overflow-y-auto flex flex-col justify-center px-5">
@@ -1763,7 +1763,7 @@ export default function ChatPage() {
 
   return (
     <div className="h-screen bg-background text-foreground flex flex-col">
-      <Navbar alwaysVisible />
+      <Navbar />
       {chartBand}
 
       <main className="flex-1 overflow-y-auto px-5 py-8">

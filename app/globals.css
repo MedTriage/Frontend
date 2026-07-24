@@ -17,6 +17,9 @@
   --muted: #5c6672; /* pencil */
   --border: #dce0df; /* hairline rule */
   --footer-bg: #eceeed;
+  /* A recessed ground. No hue — depth in this palette is value, never colour, so a
+     panel can sit back from the page without spending the triage scale. */
+  --sunk: #eceeed;
 
   /* Accent is ink, not a hue. Buttons are stamped, not lit. */
   --accent: #14181b;
@@ -43,6 +46,13 @@
   /* What the patient actually described. Distinct from both the candidate green and
      the triage scale, so the anchors of the graph never read as a verdict. */
   --node-finding: #4a5a7a;
+
+  /* Elevation. The interface was hairlines-only, which is right for a table and
+     wrong for the hero: the cards there float above the page and have to look it.
+     Neutral and low-opacity so depth stays a matter of value, never of hue. */
+  --shadow-1: 0 1px 2px rgba(20, 24, 27, 0.04), 0 6px 16px rgba(20, 24, 27, 0.05);
+  --shadow-2: 0 2px 4px rgba(20, 24, 27, 0.05), 0 18px 44px rgba(20, 24, 27, 0.09);
+  --radius: 8px;
 }
 
 .dark {
@@ -52,6 +62,7 @@
   --muted: #868f99;
   --border: #272d33;
   --footer-bg: #111417;
+  --sunk: #111417;
 
   --accent: #e8ecea;
   --accent-muted: #272d33;
@@ -69,6 +80,12 @@
   --node-live: #35d6ba;
   --node-out: #3d474e;
   --node-finding: #8fa4c9;
+
+  /* On dark stock a cast shadow does nothing, so elevation is carried by a lifted
+     surface and a rim instead — the same signal, delivered the way dark UI can. */
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.06), 0 24px 60px rgba(0, 0, 0, 0.6);
+  --radius: 8px;
 }
 
 @theme inline {
@@ -83,6 +100,7 @@
   --color-danger: var(--danger);
   --color-warning: var(--warning);
   --color-footer-bg: var(--footer-bg);
+  --color-sunk: var(--sunk);
 
   --color-node-live: var(--node-live);
   --color-node-out: var(--node-out);
@@ -92,27 +110,38 @@
   --color-t2: var(--t2);
   --color-t3: var(--t3);
 
-  --font-sans: var(--font-archivo);
-  --font-mono: var(--font-plex-mono);
+  --font-sans: var(--font-satoshi);
+  --font-mono: var(--font-iosevka);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-satoshi), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Display type is set tight and heavy; the mono labels are set wide and small.
-   That collision is the voice of the page. */
+/* Display type is one notch above body weight and tracked in hard. Satoshi at 500
+   is already assertive at 96px, and pushing to 700 makes it shout — the size is
+   doing the work, so the weight does not have to. Negative tracking is what makes a
+   large line read as designed rather than merely big. */
 .display {
-  font-weight: 700;
-  letter-spacing: -0.033em;
-  line-height: 0.98;
+  font-weight: 500;
+  letter-spacing: -0.032em;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+/* Sub-heads: the same voice at conversational volume. Tracking relaxes as the size
+   drops, because tight tracking that flatters a headline closes up a small line. */
+.display-sm {
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.12;
 }
 
 .label {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-iosevka), ui-monospace, monospace;
   font-size: 10px;
   line-height: 1;
   text-transform: uppercase;
@@ -123,7 +152,7 @@ body {
 /* Data — confidences, ids, timestamps, levels. Anything a clinician would read
    off a printout is monospaced. */
 .data {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-iosevka), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
 
@@ -204,6 +233,24 @@ body {
   animation: strike 420ms cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 
+/* The dwell rail. Fills down the active level while the scale advances on its own,
+   so the reader can see how long they have before it moves — an auto-advancing panel
+   that gives no warning reads as the page twitching. scaleY rather than height:
+   height is a layout property and would reflow the row sixty times a second. */
+@keyframes dwell {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.dwell {
+  transform-origin: top center;
+  animation: dwell var(--dwell, 6s) linear forwards;
+}
+
 /* A caret that blinks like a chart plotter idling. Used only while the pipeline
    is working, so motion in this UI always means "the system is thinking". */
 @keyframes blink {
@@ -237,6 +284,23 @@ body {
 }
 
 
+/* ─────────────────────────────────────────────
+   The clip.
+
+   A fragment of a real consultation, floated in the hero and then assembled into a
+   track. `contain` and the null 3D transform are not micro-optimisation: five
+   absolutely-positioned cards animating position, scale and rotation against scroll
+   will thrash layout on every frame without them.
+   ───────────────────────────────────────────── */
+.deck-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  contain: layout style paint;
+  transform: translateZ(0);
+}
+
 /* Sweep along a rule — the pipeline's only motion. */
 @keyframes sweep {
   0% {
@@ -249,6 +313,105 @@ body {
 
 .sweep {
   animation: sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* ─────────────────────────────────────────────
+   The footer.
+
+   An always-dark slab, in both themes. This is not a stylistic whim: the whole
+   effect below is a body glowing into its surroundings, and a glow is a value
+   *increase* — it can only read against a ground darker than itself. On chart
+   stock the same shadow is invisible. So the footer stops inheriting the page
+   theme and carries its own.
+
+   Redefining the theme tokens locally is what makes that cheap: `@theme inline`
+   compiles `text-muted` to `color: var(--muted)`, resolved at the element, so
+   every utility already in the markup re-points here with no markup changes.
+   ───────────────────────────────────────────── */
+.footer-dark {
+  --background: #0d1114;
+  --footer-bg: #0d1114;
+  --card: #141a1e;
+  --foreground: #e8ecea;
+  --muted: #8b949c;
+  --border: #232a2f;
+  --sunk: #0a0e11;
+
+  --accent: #e8ecea;
+  --accent-muted: #232a2f;
+  --on-accent: #0d1114;
+
+  /* The sphere. Emerald is the third authorised departure from "colour means
+     risk" — after the differential graph and the boundary marks — and it is
+     deliberately *not* --t1: a footer ornament must not borrow the meaning of
+     "safe, answered directly". It is pushed bright and cool, well clear of t1's
+     forest green, and it is quarantined to this slab where no triage colour
+     ever appears. */
+  --globe-tint: #10b981;
+  --globe-deep: #04120d;
+  --globe-halo: rgba(16, 185, 129, 0.28); /* what bleeds into the slab */
+  --globe-atmo: rgba(198, 222, 208, 0.8); /* the lit rim, inside the limb */
+  --globe-line: rgba(226, 255, 240, 0.55);
+}
+
+/* ─────────────────────────────────────────────
+   The footer sphere.
+
+   Two motions, both pure CSS: the whole body turns, and each ring redraws itself
+   along its own dash pattern. No canvas, no WebGL, no per-frame JavaScript — the
+   ornament is one gradient, two box-shadows, six ellipses and two keyframes, so
+   it costs the compositor a transform and nothing else.
+
+   The gradient turns with the rings, as rig has it. That works here only because
+   the body's light is a linear ramp rather than a fixed specular highlight — a
+   terminator sweeping round reads as rotation, where a moving hotspot would read
+   as a flat disc being spun.
+   ───────────────────────────────────────────── */
+@keyframes globe-turn {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.globe-turn {
+  animation: globe-turn 80s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes globe-dash {
+  from {
+    stroke-dashoffset: 1640;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 1640 is 41 whole dash periods, so a ring never lands mid-dash. `alternate`
+   makes the rings breathe back and forth rather than restarting — a hard reset
+   every 24s is the tell that turns an instrument back into a loading spinner. */
+.globe-ring {
+  stroke-dasharray: 20 20;
+  animation: globe-dash 24s ease-in-out infinite alternate;
+}
+
+/* The pixel arrows on the FAQ button march right on a loop. steps() quantises
+   the travel so it reads as a sprite advancing pixel by pixel rather than a
+   smooth glide — the tell of the original's pixelated glyph. One period is a
+   chevron plus its gap (11px), so the row loops seamlessly. */
+@keyframes cta-march {
+  from {
+    transform: translateX(-11px);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.cta-march {
+  animation: cta-march 0.6s steps(5) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -277,9 +440,21 @@ body {
   .edge-draw {
     stroke-dashoffset: 0;
   }
+  /* Same reasoning as the edges: park the rings closed so the sphere is still a
+     wireframe sphere when it is not turning. The rotation needs no override —
+     its resting state is already the identity transform. */
+  .globe-ring {
+    stroke-dashoffset: 0;
+  }
   /* The strike must survive: it carries meaning, not decoration. Without it the
      overruled level would read as still standing. */
   .strike {
     transform: scaleX(1);
+  }
+  /* The scale stops advancing on its own under reduced motion — the component also
+     refuses to start the timer — so the rail lands filled rather than sitting at
+     zero, which would read as a stalled progress bar. */
+  .dwell {
+    transform: scaleY(1);
   }
 }

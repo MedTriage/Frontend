@@ -114,7 +114,7 @@ const LIMITS = [
 
 const COLOPHON = [
   { what: "Interface", with: "Next.js, React, TypeScript, Tailwind" },
-  { what: "Type", with: "Archivo, IBM Plex Mono" },
+  { what: "Type", with: "Satoshi, Iosevka" },
   { what: "Pipeline", with: "FastAPI, LangGraph" },
   { what: "Model", with: "Cerebras gpt-oss-120b" },
   { what: "Guidelines", with: "Pinecone vector search over WHO documents" },
