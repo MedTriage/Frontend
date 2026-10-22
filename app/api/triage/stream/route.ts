@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
               title: event.title,
               intent_type: event.intent_type,
               intent_confidence: event.intent_confidence,
-              rag_output: event.rag_output || null,
+              parametric_output: event.parametric_output || null,
               kgrag_output: event.kgrag_output || null,
               mcp_output: event.mcp_output || null,
               orchestrator_output: event.orchestrator_output || null,

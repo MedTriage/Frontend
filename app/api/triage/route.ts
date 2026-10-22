@@ -68,10 +68,10 @@ export async function POST(request: NextRequest) {
       user_input: data.user_input,
       intent_type: data.intent_type,
       intent_confidence: data.intent_confidence,
-      // All three retrieval branches are forwarded, not just the vector one. The
-      // point the product is making — that independent sources were consulted and
-      // may have disagreed — cannot be shown if only one of them reaches the client.
-      rag_output: data.rag_output || null,
+      // All three evidence branches are forwarded, not just one. The point the
+      // product is making — that independent sources were consulted and may have
+      // disagreed — cannot be shown if only one of them reaches the client.
+      parametric_output: data.parametric_output || null,
       kgrag_output: data.kgrag_output || null,
       mcp_output: data.mcp_output || null,
       orchestrator_output: data.orchestrator_output || null,

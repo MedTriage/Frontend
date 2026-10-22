@@ -70,10 +70,10 @@ const CY = H / 2;
 const R_OUT = 118;
 const R_MID = 66;
 
-const MONO = "var(--font-plex-mono), ui-monospace, monospace";
-// Plex Mono advance width at 10px. Labels are truncated to the space actually left
+const MONO = "var(--font-iosevka), ui-monospace, monospace";
+// Iosevka advance width at 10px (0.5em). Labels are truncated to the space left
 // between the node and the frame, which is what stops the overflow.
-const CH = 6.02;
+const CH = 5.0;
 const MAX_NODES = 10;
 
 function radiusFor(status: NodeStatus) {

@@ -50,6 +50,13 @@ function emitChange() {
   listeners.forEach((l) => l());
 }
 
+/* Exported so anything deriving a value from the themed DOM — a CSS custom
+   property read into a canvas, chiefly — can subscribe to the same signal the
+   tree re-renders on, and read it the same way: through the store, during
+   render. Sampling those values in an effect instead sets state on a cascade,
+   which is both slower and something the lint rules reject outright. */
+export { subscribe as subscribeTheme };
+
 /* ── provider ── */
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

@@ -23,13 +23,12 @@ export interface DoctorCase {
   pipeline?: {
     intentType?: string;
     intentConfidence?: number;
-    ragOutput?: {
+    parametricOutput?: {
       probable_diagnosis: string;
       differentials: string[];
       recommended_actions: string[];
       citations: string[];
       confidence: number;
-      sources_retrieved: number;
     } | null;
     orchestratorOutput?: {
       response: string;

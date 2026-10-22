@@ -17,7 +17,6 @@ interface SourceOutput {
   recommended_actions?: string[];
   citations?: string[];
   confidence?: number;
-  sources_retrieved?: number;
   error?: string;
   status?: string;
 }
@@ -59,7 +58,7 @@ interface DoctorCase {
   pipeline?: {
     intentType?: string;
     intentConfidence?: number;
-    ragOutput?: SourceOutput | null;
+    parametricOutput?: SourceOutput | null;
     kgragOutput?: SourceOutput | null;
     mcpOutput?: SourceOutput | null;
     orchestratorOutput?: OrchestratorOutput | null;
@@ -80,7 +79,7 @@ const STATUS = {
 } as const;
 
 const SOURCES = [
-  { key: "rag", name: "Clinical guidelines" },
+  { key: "parametric", name: "Medical knowledge" },
   { key: "kgrag", name: "Related conditions" },
   { key: "mcp", name: "FDA & PubMed" },
 ] as const;
@@ -333,8 +332,8 @@ export default function DoctorDashboard() {
                                   <div className="border-t border-border">
                                     {SOURCES.map((src) => {
                                       const raw =
-                                        src.key === "rag"
-                                          ? p.ragOutput
+                                        src.key === "parametric"
+                                          ? p.parametricOutput
                                           : src.key === "kgrag"
                                             ? p.kgragOutput
                                             : p.mcpOutput;
@@ -358,14 +357,14 @@ export default function DoctorDashboard() {
                                     })}
                                   </div>
 
-                                  {p.ragOutput?.differentials &&
-                                    p.ragOutput.differentials.length > 0 && (
+                                  {p.parametricOutput?.differentials &&
+                                    p.parametricOutput.differentials.length > 0 && (
                                       <div className="mt-4">
                                         <p className="label mb-2">
                                           Differentials
                                         </p>
                                         <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
-                                          {p.ragOutput.differentials.map(
+                                          {p.parametricOutput.differentials.map(
                                             (d, i) => (
                                               <li
                                                 key={i}

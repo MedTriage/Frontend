@@ -14,7 +14,7 @@ export type TriageLevel = 1 | 2 | 3;
 export interface PipelineMetadata {
   intentType?: string;
   intentConfidence?: number;
-  ragOutput?: unknown;
+  parametricOutput?: unknown;
   orchestratorOutput?: unknown;
   orchestratorDecision?: string | null;
   guardianOutput?: unknown;
