@@ -83,7 +83,7 @@ type TriageLevel = 1 | 2 | 3;
 interface PipelineMetadata {
   intentType?: string;
   intentConfidence?: number;
-  ragOutput?: SourceOutput | null;
+  parametricOutput?: SourceOutput | null;
   kgragOutput?: SourceOutput | null;
   mcpOutput?: SourceOutput | null;
   orchestratorOutput?: OrchestratorOutput | null;
@@ -148,9 +148,9 @@ const TRIAGE_CONFIG = {
    codebase should ever meet the words RAG, KGRAG, MCP, SNOMED or orchestrator. */
 const SOURCES = [
   {
-    key: "rag",
-    name: "Clinical guidelines",
-    about: "WHO and published treatment guidance",
+    key: "parametric",
+    name: "Medical knowledge",
+    about: "What the assistant knows, without a cited source",
   },
   {
     key: "kgrag",
@@ -195,7 +195,6 @@ interface SourceOutput {
   recommended_actions?: string[];
   citations?: string[];
   confidence?: number;
-  sources_retrieved?: number;
   error?: string;
   status?: string;
 }
@@ -226,7 +225,7 @@ interface TriageAPIResponse {
   intent_type: string;
   title: string;
   intent_confidence: number;
-  rag_output: SourceOutput | null;
+  parametric_output: SourceOutput | null;
   kgrag_output: SourceOutput | null;
   mcp_output: SourceOutput | null;
   orchestrator_output: OrchestratorOutput | null;
@@ -316,10 +315,9 @@ async function getTriageResponse(
 }> {
   try {
     const controller = new AbortController();
-    // A cold clinical query fans out to RAG + KGRAG + MCP in parallel, and the MCP
-    // branch hits live external sources (PubMed alone can take ~11s) before the
-    // orchestrator and guardian each make their own LLM call. A "revise" adds another
-    // retrieval round on top of that.
+    // A cold clinical query fans out to three evidence branches in parallel, and the
+    // MCP branch hits live external sources (PubMed alone can take ~11s) before the
+    // orchestrator and guardian each make their own LLM call.
     const timeoutId = setTimeout(() => controller.abort(), 300000);
 
     const res = await fetch("/api/triage/stream", {
@@ -390,7 +388,7 @@ async function getTriageResponse(
     }
 
     // The orchestrator's synthesized response is the ONLY patient-facing text. Raw
-    // rag_output is deliberately not counted as content — it has not been through the
+    // branch output is deliberately not counted as content — it has not been through the
     // orchestrator's hallucination and safety audit, so it must never reach a patient.
     const hasContent = !!(
       data.orchestrator_response || data.orchestrator_output?.response
@@ -412,7 +410,7 @@ async function getTriageResponse(
     const pipelineMeta: PipelineMetadata = {
       intentType: data.intent_type,
       intentConfidence: data.intent_confidence,
-      ragOutput: data.rag_output,
+      parametricOutput: data.parametric_output,
       kgragOutput: data.kgrag_output,
       mcpOutput: data.mcp_output,
       orchestratorOutput: data.orchestrator_output,
@@ -422,8 +420,8 @@ async function getTriageResponse(
 
     // Every level renders the same field: the orchestrator's synthesized response. It
     // is the single audited, patient-facing text — for chitchat, for a clinical
-    // assessment, and for an emergency alike. There is deliberately no fallback to
-    // rag_output: that text has not passed the safety audit.
+    // assessment, and for an emergency alike. There is deliberately no fallback to a
+    // branch output: that text has not passed the safety audit.
     const content =
       data.orchestrator_response ||
       data.orchestrator_output?.response ||
@@ -522,7 +520,6 @@ function readSource(o?: SourceOutput | null): {
     return { finding: "Nothing relevant found", reported: false };
 
   const bits: string[] = [];
-  if (o.sources_retrieved) bits.push(`${o.sources_retrieved} sources`);
   if (typeof o.confidence === "number")
     bits.push(`${(o.confidence * 100).toFixed(0)}% sure`);
 
@@ -1464,8 +1461,8 @@ export default function ChatPage() {
                       const rows = SOURCES.map((src) => ({
                         src,
                         raw:
-                          src.key === "rag"
-                            ? p.ragOutput
+                          src.key === "parametric"
+                            ? p.parametricOutput
                             : src.key === "kgrag"
                               ? p.kgragOutput
                               : p.mcpOutput,
@@ -1532,7 +1529,7 @@ export default function ChatPage() {
                     {(() => {
                       const diffs = [
                         ...(p.kgragOutput?.differentials ?? []),
-                        ...(p.ragOutput?.differentials ?? []),
+                        ...(p.parametricOutput?.differentials ?? []),
                       ]
                         .filter(Boolean)
                         .slice(0, 6);

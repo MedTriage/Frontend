@@ -184,6 +184,17 @@ body {
   border-radius: 2px;
 }
 
+/* The About hero's globe. `touch-action: none` is load-bearing rather than
+   cosmetic: without it a drag on a touch screen is claimed by the page's own
+   scrolling and the globe never turns at all. */
+.aboutGlobe {
+  cursor: grab;
+  touch-action: none;
+}
+.aboutGlobe:active {
+  cursor: grabbing;
+}
+
 /* ─────────────────────────────────────────────
    The signature: the autonomy ledger.
    Bars are drawn, not filled — they grow from the rule.
@@ -251,6 +262,78 @@ body {
   animation: dwell var(--dwell, 6s) linear forwards;
 }
 
+/* The same rail laid flat, for the About band's step sequence. Kept as its own
+   keyframe rather than a transform-agnostic one: scaleX and scaleY are not
+   interchangeable here, because each has to leave the *other* axis alone — a
+   3px rule must stay 3px thick while it draws. */
+@keyframes dwell-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.dwell-x {
+  transform-origin: left center;
+  animation: dwell-x var(--dwell, 6s) linear forwards;
+}
+
+/* The scan line on the colophon card — a beam that travels across the row of
+   marks, the way a reader head crosses a strip. Upstream ships this as an
+   `animate-move` utility from its own Tailwind config, which this project does
+   not have, so without it the line simply parks and the card looks broken.
+
+   One direction, and it does jump back at the end. That reset is invisible
+   because it happens off the edges, where the strip's radial mask has already
+   faded the beam to nothing — which is also why the mask cannot be tightened
+   without the reset becoming a visible flick. The two are load-bearing on each
+   other; see the note in `StackCard`. */
+@keyframes scan-sweep {
+  from {
+    left: 0%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+.scan-sweep {
+  animation: scan-sweep 5s linear infinite;
+}
+
+/* ─────────────────────────────────────────────
+   The level pill.
+
+   A lamp, not an ornament. The dot breathes at a rate set by the level it is
+   showing — Level 3 fast enough to read as urgency, Level 1 slow enough to read
+   as idling — so the pulse is carrying the same information as the colour and
+   the number beside it, in a third channel. That is the only reason it is
+   allowed to move: a decorative blink on a rules table would be noise sitting
+   next to safety-critical copy.
+
+   `currentColor` throughout, so one class serves all three levels and the pill
+   simply inherits its triage colour from the element. The resting glow lives on
+   the dot itself rather than inside the keyframe, so switching the animation off
+   leaves a lit lamp rather than a dead one — which is what the reduced-motion
+   block below relies on.
+   ───────────────────────────────────────────── */
+@keyframes level-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 5px 0 color-mix(in srgb, currentColor 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 11px 3px color-mix(in srgb, currentColor 75%, transparent);
+  }
+}
+
+.level-dot {
+  box-shadow: 0 0 5px 0 color-mix(in srgb, currentColor 45%, transparent);
+  animation: level-pulse var(--pulse, 2.6s) ease-in-out infinite;
+}
+
 /* A caret that blinks like a chart plotter idling. Used only while the pipeline
    is working, so motion in this UI always means "the system is thinking". */
 @keyframes blink {
@@ -316,19 +399,21 @@ body {
 }
 
 /* ─────────────────────────────────────────────
-   The footer.
+   The dark slabs.
 
-   An always-dark slab, in both themes. This is not a stylistic whim: the whole
-   effect below is a body glowing into its surroundings, and a glow is a value
-   *increase* — it can only read against a ground darker than itself. On chart
-   stock the same shadow is invisible. So the footer stops inheriting the page
-   theme and carries its own.
+   Two places stop inheriting the page theme and carry their own: the footer and
+   the About page's ink band. Neither is a stylistic whim, and they fail for the
+   same reason — both are a bright body read against its ground. The footer's
+   glow is a value *increase*, invisible on chart stock; the band's plates are
+   photographs lit out of near-black, and a paper ground would put a white page
+   around four black rectangles.
 
    Redefining the theme tokens locally is what makes that cheap: `@theme inline`
    compiles `text-muted` to `color: var(--muted)`, resolved at the element, so
    every utility already in the markup re-points here with no markup changes.
    ───────────────────────────────────────────── */
-.footer-dark {
+.footer-dark,
+.band-dark {
   --background: #0d1114;
   --footer-bg: #0d1114;
   --card: #141a1e;
@@ -340,7 +425,10 @@ body {
   --accent: #e8ecea;
   --accent-muted: #232a2f;
   --on-accent: #0d1114;
+}
 
+/* Quarantined to the footer, which is the only slab that draws a sphere. */
+.footer-dark {
   /* The sphere. Emerald is the third authorised departure from "colour means
      risk" — after the differential graph and the boundary marks — and it is
      deliberately *not* --t1: a footer ornament must not borrow the meaning of
@@ -456,5 +544,14 @@ body {
      zero, which would read as a stalled progress bar. */
   .dwell {
     transform: scaleY(1);
+  }
+  .dwell-x {
+    transform: scaleX(1);
+  }
+  /* The lamp stays lit, it just stops breathing. Suppressing it entirely would
+     take the level pill's third channel away from exactly the readers most
+     likely to be relying on more than one. */
+  .level-dot {
+    animation: none;
   }
 }

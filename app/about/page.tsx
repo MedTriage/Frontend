@@ -1,59 +1,21 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
+import { AboutHero } from "../components/AboutHero";
+import { CometCard } from "../components/CometCard";
+import { LimitScale } from "../components/LimitScale";
+import { RuleGrid } from "../components/RuleGrid";
+import { SecondsBand } from "../components/SecondsBand";
+import { StackCard } from "../components/StackCard";
 
-/* ── The signature: the guardian's actual decision table.
-
-   This is the most credible thing the system owns. Every other medical assistant
-   asks you to trust its judgement; this one publishes the rules that outrank its
-   judgement. It is a table because it genuinely is one — a rule table, evaluated in
-   order, before any model gets a say. ── */
-
-const RULES = [
-  {
-    when: "An emergency is detected",
-    then: 3,
-    note: "Chest pain, breathing trouble, stroke signs, bleeding, overdose, self-harm. When in doubt the system calls it an emergency — a false alarm is cheaper than a missed one.",
-  },
-  {
-    when: "The safety review escalates",
-    then: 3,
-    note: "A hallucinated claim, an unresolvable conflict between sources, or an unsafe recommendation.",
-  },
-  {
-    when: "Safety risk is high",
-    then: 3,
-    note: "Including anything that contradicts a recorded allergy or interacts with a recorded medication.",
-  },
-  {
-    when: "Confidence falls below 30%",
-    then: 3,
-    note: "A diagnosis nobody is confident in does not go to a patient.",
-  },
-  {
-    when: "The answer names a drug or a dose",
-    then: 2,
-    note: "No prescription reaches a patient without a doctor. There is no exception to this one.",
-  },
-  {
-    when: "The answer asks for a test, lab or scan",
-    then: 2,
-    note: "Ordering investigations is a clinical act.",
-  },
-  {
-    when: "The sources needed a second look",
-    then: 2,
-    note: "Thin evidence gets re-retrieved once, and the case is held regardless of what comes back.",
-  },
-  {
-    when: "The system is asking you a question",
-    then: 1,
-    note: "Requests for clarification are not diagnoses, so they are not held.",
-  },
-] as const;
+/* The rule table itself now lives in `app/lib/rules.ts` and is rendered by
+   `RuleGrid`. It kept growing a second job — copy, levels, plates and layout
+   spans — and a page file is the wrong place for a safety-critical data set
+   that other things need to read. */
 
 /* ── What the system is actually made of. Named as a patient meets them. ── */
 
@@ -101,32 +63,6 @@ const FAILURES = [
   },
 ];
 
-/* ── Honest limits. The most persuasive page on a medical site is the one that
-      tells you what it can't do. ── */
-
-const LIMITS = [
-  "This is a research system. It is not a medical device, it is not a diagnosis, and it is not a substitute for seeing a doctor.",
-  "It cannot look at images — no rashes, no scans, no photographs.",
-  "A Level 2 answer waits on a real human being, and humans are not instant.",
-  "The map of related conditions needs a licensed terminology release. Where that is unavailable, that source reports nothing and says so.",
-  "The model can still be wrong. The rules bound how much damage a wrong answer is allowed to do; they do not make the model right.",
-];
-
-const COLOPHON = [
-  { what: "Interface", with: "Next.js, React, TypeScript, Tailwind" },
-  { what: "Type", with: "Satoshi, Iosevka" },
-  { what: "Pipeline", with: "FastAPI, LangGraph" },
-  { what: "Model", with: "Cerebras gpt-oss-120b" },
-  { what: "Guidelines", with: "Pinecone vector search over WHO documents" },
-  { what: "Related conditions", with: "SNOMED CT" },
-  { what: "Live lookups", with: "FDA, PubMed, RxNorm, WHO" },
-];
-
-const TONE: Record<number, { text: string; rule: string }> = {
-  1: { text: "text-t1", rule: "bg-t1" },
-  2: { text: "text-t2", rule: "bg-t2" },
-  3: { text: "text-t3", rule: "bg-t3" },
-};
 
 /* ── The hero graphic: the overrule, happening.
 
@@ -239,15 +175,17 @@ export default function AboutPage() {
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Navbar />
 
+      <AboutHero />
+
       {/* ── Thesis. The claim on the left; the claim being kept on the right. ── */}
       <section className="border-b border-border">
         <div className="max-w-[1180px] mx-auto px-5 sm:px-8 py-16 sm:py-24 grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] gap-12 lg:gap-16 items-center">
           <div className="rise">
             <p className="label mb-6">What this is</p>
-            <h1 className="display text-[2.3rem] sm:text-[3rem] text-balance">
+            <h2 className="display text-[2.3rem] sm:text-[3rem] text-balance">
               Every medical AI asks you to trust its judgement. This one
               publishes the rules that overrule it.
-            </h1>
+            </h2>
             <p className="mt-7 text-base text-muted leading-relaxed max-w-[52ch]">
               MedTriage answers health questions, and then decides — before you
               see anything — how far it was allowed to answer on its own. Most of
@@ -260,62 +198,8 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── The signature: the rule table ── */}
-      <section className="border-b border-border">
-        <div className="max-w-[1180px] mx-auto px-5 sm:px-8 py-16 sm:py-20">
-          <div className="max-w-[56ch] mb-12">
-            <p className="label mb-4">The rules</p>
-            <h2 className="display text-[1.9rem] sm:text-[2.4rem]">
-              The model proposes a level. These dispose.
-            </h2>
-            <p className="mt-4 text-[15px] text-muted leading-relaxed">
-              Each rule is evaluated before the language model is asked for an
-              opinion, and clamps the result afterwards. The model can argue for a
-              lower level all it likes; it cannot have one. Neither can a cleverly
-              worded prompt.
-            </p>
-          </div>
-
-          <div className="border-t border-foreground">
-            <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_5rem_minmax(0,1.4fr)] gap-6 py-2.5 border-b border-border">
-              <span className="label">Condition</span>
-              <span className="label">Level</span>
-              <span className="label">Why</span>
-            </div>
-
-            {RULES.map((r) => {
-              const tone = TONE[r.then];
-              return (
-                <div
-                  key={r.when}
-                  className="grid sm:grid-cols-[minmax(0,1fr)_5rem_minmax(0,1.4fr)] gap-x-6 gap-y-2 py-5 border-b border-border"
-                >
-                  <p className="text-[15px] font-medium">{r.when}</p>
-
-                  <div className="flex items-center gap-2 sm:block">
-                    <span className={`block w-6 h-[3px] ${tone.rule}`} />
-                    <span
-                      className={`data text-[12px] font-semibold sm:mt-1.5 sm:block ${tone.text}`}
-                    >
-                      {r.then === 1 ? "1" : r.then === 2 ? "2 min" : "3"}
-                    </span>
-                  </div>
-
-                  <p className="text-[14px] text-muted leading-relaxed">
-                    {r.note}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-
-          <p className="mt-6 text-[14px] text-muted leading-relaxed max-w-[62ch]">
-            Where two rules apply, the stricter one wins. Where none applies, the
-            model&apos;s judgement is used — and that only ever happens between
-            Level 1 and Level 2, never for an emergency.
-          </p>
-        </div>
-      </section>
+      {/* ── The signature: the rule table, as a grid ── */}
+      <RuleGrid />
 
       {/* ── The parts ── */}
       <section className="border-b border-border">
@@ -342,6 +226,13 @@ export default function AboutPage() {
           </div>
         </div>
       </section>
+
+      {/* ── The wait ──
+          Placed here on purpose: the reader has just been handed the five parts,
+          so the next thing owed to them is those parts running. It is also the
+          page's only full-bleed section, which is the break the rhythm needs
+          after three ruled tables in a row. ── */}
+      <SecondsBand />
 
       {/* ── Failure ── */}
       <section className="border-b border-border">
@@ -371,56 +262,53 @@ export default function AboutPage() {
       {/* ── Limits ── */}
       <section className="border-b border-border">
         <div className="max-w-[1180px] mx-auto px-5 sm:px-8 py-16 sm:py-20">
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-10 lg:gap-20">
-            <div>
-              <p className="label mb-4">What it can&apos;t do</p>
-              <h2 className="display text-[1.9rem] sm:text-[2.4rem]">
-                The honest list.
-              </h2>
-            </div>
-
-            <ul className="border-t border-foreground">
-              {LIMITS.map((l) => (
-                <li
-                  key={l}
-                  className="py-4 border-b border-border text-[15px] leading-relaxed"
-                >
-                  {l}
-                </li>
-              ))}
-            </ul>
+          <div className="max-w-[56ch] mb-12">
+            <p className="label mb-4">What it can&apos;t do</p>
+            <h2 className="display text-[1.9rem] sm:text-[2.4rem]">
+              The honest list.
+            </h2>
+            <p className="mt-4 text-[15px] text-muted leading-relaxed">
+              Five of them, one at a time. The second is the one about images, and
+              its plate is that limit happening — it coarsens until you cannot read
+              it either.
+            </p>
           </div>
+
+          <LimitScale />
         </div>
       </section>
 
       {/* ── Colophon ── */}
-      <section className="border-b border-border">
-        <div className="max-w-[1180px] mx-auto px-5 sm:px-8 py-16 sm:py-20">
-          <p className="label mb-8">Built with</p>
-          <dl className="border-t border-border">
-            {COLOPHON.map((c) => (
-              <div
-                key={c.what}
-                className="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-6 py-3 border-b border-border"
-              >
-                <dt className="data text-[12px] text-muted">{c.what}</dt>
-                <dd className="data text-[12px]">{c.with}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </section>
+      <StackCard />
 
-      {/* ── Close ── */}
+      {/* ── Close ──
+
+          The one place on the page carrying decoration that admits to being
+          decoration: the card tilts and catches light, and it is not showing you
+          anything. It earns that by being last. Every claim has been made and
+          every limit admitted by this point, so what is left is an invitation,
+          and an object you can turn over asks better than another paragraph.
+
+          The picture is a door standing open — the only subject in this family
+          that means *begin*, and deliberately the lightest and calmest image on
+          a page that opens with an ambulance at night.
+
+          NOTE: this image is stylistically off-family. Everything else in
+          /public/rules is bold-lined, high-contrast cel shading; this came back
+          loose and pastel and the Runway workspace ran out of credits before it
+          could be reshot. It survives here because the tonal shift happens to
+          land where the page wants one — six sections after the grid, at the
+          quiet end. It is still the wrong hand, and it should be regenerated
+          against /public/rules/clarify.jpg as a style reference. ── */}
       <section>
-        <div className="max-w-[1180px] mx-auto px-5 sm:px-8 py-20 sm:py-28">
+        <div className="mx-auto grid max-w-[1180px] items-center gap-14 px-5 py-20 sm:px-8 sm:py-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
           <div className="max-w-[46ch]">
             <h2 className="display text-[2rem] sm:text-[2.6rem]">
-              Read the rules. Then try it.
+              Ask it something.
             </h2>
             <p className="mt-5 text-[15px] text-muted leading-relaxed">
-              Every answer you get will tell you which of those rules decided how
-              it reached you.
+              You get an answer, the level it was released at, and the rule that
+              decided it. If it needs a doctor, it says so and waits for one.
             </p>
             <Link
               href="/chat"
@@ -430,6 +318,52 @@ export default function AboutPage() {
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
           </div>
+
+          {/* Inset rather than bled to the edge, which is how the component is
+              meant to be used: the mount is what makes the tilt legible. A
+              picture running to the card's own edge gives the eye nothing
+              stationary to judge the rotation against, and the whole thing reads
+              as a wobbling image instead of a card being turned over.
+
+              It links to the same place as the button rather than being inert —
+              once the face says "Start a consultation" it has to go somewhere,
+              and a card that invites a click and refuses one is worse than a
+              card that never invited it. */}
+          <CometCard className="mx-auto w-full max-w-[400px]">
+            <Link
+              href="/chat"
+              aria-label="Start a consultation"
+              className="group block rounded-2xl border border-border bg-card p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-sunk">
+                <Image
+                  src="/close/door.jpg"
+                  alt=""
+                  fill
+                  sizes="(max-width: 1024px) 90vw, 400px"
+                  className="object-cover"
+                />
+              </div>
+
+              <div className="flex items-center justify-between px-1.5 pb-1 pt-4">
+                <span className="text-[14px] font-medium">
+                  Start a consultation
+                </span>
+                <ArrowRight
+                  aria-hidden
+                  className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5"
+                />
+              </div>
+              {/* "No account needed" and nothing more. The obvious second half
+                  of a line like this is a privacy claim, and this product cannot
+                  make one: a Level 2 answer is POSTed to the physician queue in
+                  `/api/doctor/cases`, so "nothing leaves your browser" would be
+                  false. Do not add it back. */}
+              <p className="px-1.5 pt-1 text-[12px] leading-relaxed text-muted">
+                No account needed.
+              </p>
+            </Link>
+          </CometCard>
         </div>
       </section>
 
