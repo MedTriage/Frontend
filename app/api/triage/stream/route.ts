@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+import { BACKEND_URL, authHeader, readJson, sameOrigin } from "@/lib/backend";
 
 // Streaming keeps bytes moving, which is what stops a platform from killing a request
 // that is still working — but the pipeline can still outlast a serverless ceiling, so
@@ -17,39 +16,36 @@ export const maxDuration = 300;
   unchanged — they are already anonymous by construction.
 */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { conversation_id, text, chat_history } = body;
+  if (!sameOrigin(request)) {
+    return Response.json({ detail: "Cross-site request refused." }, { status: 403 });
+  }
+  const body = (await readJson(request)) as { conversation_id?: unknown; text?: unknown } | undefined;
 
-  if (!text || typeof text !== "string") {
-    return Response.json({ error: "Missing required field: text" }, { status: 400 });
+  if (!body?.text || typeof body.text !== "string") {
+    return Response.json({ detail: "Missing required field: text" }, { status: 400 });
   }
-  if (!conversation_id || typeof conversation_id !== "string") {
-    return Response.json(
-      { error: "Missing required field: conversation_id" },
-      { status: 400 }
-    );
-  }
+  // The server issues conversation ids and supplies the history itself; see /api/triage.
+  const conversation_id = typeof body.conversation_id === "string" ? body.conversation_id : undefined;
 
   let upstream: Response;
   try {
     upstream = await fetch(`${BACKEND_URL}/process/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({
-        conversation_id,
-        text,
-        chat_history: chat_history || [],
-      }),
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...authHeader(request) },
+      body: JSON.stringify({ conversation_id, text: body.text }),
     });
   } catch {
-    return Response.json({ error: "Backend service unavailable" }, { status: 502 });
-  }
-
-  if (!upstream.ok || !upstream.body) {
     return Response.json(
-      { error: "Backend service unavailable", details: await upstream.text().catch(() => "") },
+      { detail: "The MedTriage service isn't responding. Check that the backend is running." },
       { status: 502 }
     );
+  }
+
+  // Refusals (signed out, unverified, locked, busy, over the limit) happen before the
+  // stream opens, so they pass through with their real status and the backend's wording.
+  if (!upstream.ok || !upstream.body) {
+    const detail = await upstream.json().catch(() => ({}));
+    return Response.json(detail, { status: upstream.ok ? 502 : upstream.status });
   }
 
   const encoder = new TextEncoder();
@@ -94,6 +90,8 @@ export async function POST(request: NextRequest) {
             const guardianLevel = guardian?.triage_level;
             send({
               type: "done",
+              conversation_id: event.conversation_id,
+              message_id: event.message_id,
               title: event.title,
               intent_type: event.intent_type,
               intent_confidence: event.intent_confidence,
@@ -114,8 +112,8 @@ export async function POST(request: NextRequest) {
             });
           }
         }
-      } catch (error) {
-        send({ type: "error", message: String(error) });
+      } catch {
+        send({ type: "error", message: "The connection to the triage service dropped." });
       } finally {
         controller.close();
       }

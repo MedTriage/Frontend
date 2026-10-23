@@ -10,6 +10,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { Navbar } from "../components/Navbar";
+import { useAccount } from "@/lib/account";
 
 interface SourceOutput {
   probable_diagnosis?: string | null;
@@ -38,33 +39,69 @@ interface GuardianOutput {
   ai_lock: boolean;
 }
 
-interface ChatMessage {
-  role: "user" | "ai";
+interface StoredMessage {
+  id: number;
+  role: "user" | "assistant";
   content: string;
-  triageLevel?: 1 | 2 | 3;
-  timestamp: string;
+  pipeline: Record<string, unknown> | null;
 }
 
-interface DoctorCase {
+type CaseStatus = "pending" | "verified" | "rejected";
+
+/* A row in the queue. Deliberately thin — the question and who asked — so listing the
+   queue is not the same act as reading a case. Opening one is, and the backend logs it. */
+interface CaseRow {
   id: string;
-  patientQuery: string;
-  aiAssessment: string;
-  chatHistory: ChatMessage[];
-  triageLevel: 2;
-  status: "pending" | "verified" | "rejected";
-  createdAt: string;
-  updatedAt: string;
-  doctorNotes?: string;
-  pipeline?: {
-    intentType?: string;
-    intentConfidence?: number;
-    parametricOutput?: SourceOutput | null;
-    kgragOutput?: SourceOutput | null;
-    mcpOutput?: SourceOutput | null;
-    orchestratorOutput?: OrchestratorOutput | null;
-    orchestratorDecision?: string | null;
-    guardianOutput?: GuardianOutput | null;
+  status: CaseStatus;
+  created_at: string;
+  reviewed_at: string | null;
+  patient_name: string | null;
+  question: string;
+}
+
+interface ProfileEntry {
+  name: string;
+  detail: string | null;
+}
+
+interface CaseDetail extends CaseRow {
+  notes: string | null;
+  title: string | null;
+  transcript: StoredMessage[];
+  // The patient background exactly as the agents were given it when they answered.
+  background: string | null;
+  profile: {
+    date_of_birth: string | null;
+    gender: string | null;
+    allergies: ProfileEntry[];
+    medications: ProfileEntry[];
+    conditions: ProfileEntry[];
+  } | null;
+  profile_changed_since: boolean;
+}
+
+interface Pipeline {
+  parametricOutput?: SourceOutput | null;
+  kgragOutput?: SourceOutput | null;
+  mcpOutput?: SourceOutput | null;
+  orchestratorOutput?: OrchestratorOutput | null;
+  guardianOutput?: GuardianOutput | null;
+}
+
+function pipelineOf(m: StoredMessage | undefined): Pipeline | undefined {
+  const p = m?.pipeline;
+  if (!p) return undefined;
+  return {
+    parametricOutput: p.parametric_output as SourceOutput | null,
+    kgragOutput: p.kgrag_output as SourceOutput | null,
+    mcpOutput: p.mcp_output as SourceOutput | null,
+    orchestratorOutput: p.orchestrator_output as OrchestratorOutput | null,
+    guardianOutput: p.guardian_output as GuardianOutput | null,
   };
+}
+
+function listing(entries: ProfileEntry[]): string {
+  return entries.map((e) => (e.detail ? `${e.name} (${e.detail})` : e.name)).join(", ") || "none listed";
 }
 
 type FilterStatus = "all" | "pending" | "verified" | "rejected";
@@ -105,17 +142,20 @@ function timeAgo(iso: string): string {
 }
 
 export default function DoctorDashboard() {
-  const [cases, setCases] = useState<DoctorCase[]>([]);
+  const account = useAccount("doctor");
+  const [cases, setCases] = useState<CaseRow[]>([]);
+  const [details, setDetails] = useState<Record<string, CaseDetail>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterStatus>("all");
   const [expandedCase, setExpandedCase] = useState<string | null>(null);
   const [expandedAudit, setExpandedAudit] = useState<string | null>(null);
   const [notesMap, setNotesMap] = useState<Record<string, string>>({});
   const [updatingCase, setUpdatingCase] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const fetchCases = useCallback(async () => {
     try {
-      const res = await fetch("/api/doctor/cases");
+      const res = await fetch("/api/doctor/cases", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setCases(data);
@@ -128,11 +168,30 @@ export default function DoctorDashboard() {
   }, []);
 
   useEffect(() => {
+    if (!account) return;
     fetchCases();
     // Poll every 10 seconds for new cases
     const interval = setInterval(fetchCases, 10000);
     return () => clearInterval(interval);
-  }, [fetchCases]);
+  }, [account, fetchCases]);
+
+  const openCase = async (caseId: string) => {
+    if (expandedCase === caseId) {
+      setExpandedCase(null);
+      return;
+    }
+    setExpandedCase(caseId);
+    const res = await fetch(`/api/doctor/cases/${caseId}`, { cache: "no-store" }).catch(() => null);
+    if (res?.ok) {
+      const detail: CaseDetail = await res.json();
+      setDetails((prev) => ({ ...prev, [caseId]: detail }));
+    } else if (res?.status === 404) {
+      // Another doctor decided it in the meantime; it has left this queue.
+      setNotice("That case was just reviewed by another doctor.");
+      setExpandedCase(null);
+      fetchCases();
+    }
+  };
 
   const handleUpdateCase = async (
     caseId: string,
@@ -145,12 +204,17 @@ export default function DoctorDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status,
-          doctorNotes: notesMap[caseId] || undefined,
+          notes: notesMap[caseId] || null,
         }),
       });
       if (res.ok) {
-        const updated = await res.json();
-        setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        const updated: { status: CaseStatus; notes: string | null; reviewed_at: string } = await res.json();
+        setCases((prev) => prev.map((c) => (c.id === caseId ? { ...c, ...updated } : c)));
+        setDetails((prev) => (prev[caseId] ? { ...prev, [caseId]: { ...prev[caseId], ...updated } } : prev));
+      } else if (res.status === 404 || res.status === 409) {
+        setNotice("That case was already reviewed by another doctor.");
+        setExpandedCase(null);
+        fetchCases();
       }
     } catch (err) {
       console.error("Failed to update case:", err);
@@ -200,6 +264,12 @@ export default function DoctorDashboard() {
             </p>
           </div>
 
+          {notice && (
+            <p role="status" className="mt-6 text-[13px] border-l-2 border-foreground pl-3">
+              {notice}
+            </p>
+          )}
+
           {/* ── Filters ── */}
           <div className="flex flex-wrap gap-px bg-border border border-border mt-8 mb-2">
             {FILTERS.map((f) => (
@@ -240,15 +310,16 @@ export default function DoctorDashboard() {
               {filteredCases.map((c) => {
                 const st = STATUS[c.status];
                 const open = expandedCase === c.id;
-                const p = c.pipeline;
+                const d = details[c.id];
+                const answer = d?.transcript[d.transcript.length - 1];
+                const p = pipelineOf(answer);
                 const busy = updatingCase === c.id;
-                const conf = p?.orchestratorOutput?.confidence_adjusted;
 
                 return (
                   <div key={c.id} className="border-b border-border">
                     {/* Row */}
                     <button
-                      onClick={() => setExpandedCase(open ? null : c.id)}
+                      onClick={() => openCase(c.id)}
                       aria-expanded={open}
                       className="w-full text-left py-4 grid grid-cols-[1.25rem_minmax(0,1fr)_auto] sm:grid-cols-[1.25rem_minmax(0,1fr)_6rem_7rem_3rem] gap-x-4 gap-y-1 items-center hover:bg-card transition-colors"
                     >
@@ -256,17 +327,15 @@ export default function DoctorDashboard() {
 
                       <span className="min-w-0">
                         <span className="block text-[15px] truncate">
-                          {c.patientQuery}
+                          {c.question}
                         </span>
                         <span className={`data text-[11px] ${st.text} sm:hidden`}>
                           {st.label}
                         </span>
                       </span>
 
-                      <span className="data hidden sm:block text-[12px] text-muted tabular-nums">
-                        {typeof conf === "number"
-                          ? `${(conf * 100).toFixed(0)}%`
-                          : "—"}
+                      <span className="hidden sm:block text-[12px] text-muted truncate">
+                        {c.patient_name ?? "—"}
                       </span>
 
                       <span
@@ -276,7 +345,7 @@ export default function DoctorDashboard() {
                       </span>
 
                       <span className="data hidden sm:flex items-center justify-end gap-2 text-[11px] text-muted">
-                        {timeAgo(c.createdAt)}
+                        {timeAgo(c.created_at)}
                         <ChevronRight
                           className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`}
                         />
@@ -284,15 +353,41 @@ export default function DoctorDashboard() {
                     </button>
 
                     {/* Case sheet */}
-                    {open && (
+                    {open && !d && (
+                      <div className="pb-8">
+                        <p className="label">Opening the case</p>
+                      </div>
+                    )}
+                    {open && d && (
                       <div className="pb-8 rise">
                         <div className="border border-border bg-card">
                           {/* What the patient asked */}
                           <div className="px-5 py-4 border-b border-border">
                             <p className="label mb-2">The patient asked</p>
                             <p className="text-[15px] leading-relaxed">
-                              {c.patientQuery}
+                              {c.question}
                             </p>
+                          </div>
+
+                          {/* What the AI was told about the patient */}
+                          <div className="px-5 py-4 border-b border-border">
+                            <p className="label mb-2">What the system knew about {d.patient_name ?? "the patient"}</p>
+                            {d.background ? (
+                              <p className="text-[13px] leading-relaxed whitespace-pre-line">{d.background}</p>
+                            ) : (
+                              <p className="text-[13px] text-muted italic">No profile or earlier history.</p>
+                            )}
+                            {d.profile_changed_since && d.profile && (
+                              <div className="mt-3 pt-3 border-t border-border">
+                                <p className="text-[13px] font-medium mb-1.5">
+                                  The patient has updated their profile since this answer. Now:
+                                </p>
+                                <p className="text-[13px] text-muted leading-relaxed">
+                                  Allergies: {listing(d.profile.allergies)} · Medications:{" "}
+                                  {listing(d.profile.medications)} · Conditions: {listing(d.profile.conditions)}
+                                </p>
+                              </div>
+                            )}
                           </div>
 
                           {/* What is being held */}
@@ -301,7 +396,7 @@ export default function DoctorDashboard() {
                               Held for your approval
                             </p>
                             <p className="text-[15px] leading-relaxed whitespace-pre-line">
-                              {c.aiAssessment}
+                              {answer?.content}
                             </p>
                           </div>
 
@@ -416,11 +511,11 @@ export default function DoctorDashboard() {
                           )}
 
                           {/* Transcript */}
-                          {c.chatHistory?.length > 0 && (
+                          {d.transcript.length > 0 && (
                             <div className="px-5 py-4 border-b border-border">
                               <p className="label mb-3">Conversation</p>
                               <div className="space-y-3">
-                                {c.chatHistory.map((m, i) => (
+                                {d.transcript.map((m, i) => (
                                   <div
                                     key={i}
                                     className={`text-[14px] leading-relaxed ${
@@ -503,17 +598,17 @@ export default function DoctorDashboard() {
                                   <X className="w-4 h-4" />
                                 )}
                                 <span className="data text-[12px]">
-                                  {st.label} · {timeAgo(c.updatedAt)} ago
+                                  {st.label} · {timeAgo(c.reviewed_at ?? c.created_at)} ago
                                 </span>
                               </div>
 
-                              {c.doctorNotes && (
+                              {d.notes && (
                                 <div className="mt-3 pt-3 border-t border-border">
                                   <p className="label mb-1.5">
                                     Your note to the patient
                                   </p>
                                   <p className="text-[14px] leading-relaxed whitespace-pre-line">
-                                    {c.doctorNotes}
+                                    {d.notes}
                                   </p>
                                 </div>
                               )}
