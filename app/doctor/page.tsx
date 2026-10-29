@@ -152,14 +152,22 @@ export default function DoctorDashboard() {
   const [notesMap, setNotesMap] = useState<Record<string, string>>({});
   const [updatingCase, setUpdatingCase] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Patients who went silent after a case this doctor approved.
+  const [unanswered, setUnanswered] = useState<
+    { id: string; patient_name: string; label: string; opened_at: string; lapsed_at: string | null }[]
+  >([]);
 
   const fetchCases = useCallback(async () => {
     try {
-      const res = await fetch("/api/doctor/cases", { cache: "no-store" });
+      const [res, silent] = await Promise.all([
+        fetch("/api/doctor/cases", { cache: "no-store" }),
+        fetch("/api/doctor/followups", { cache: "no-store" }),
+      ]);
       if (res.ok) {
         const data = await res.json();
         setCases(data);
       }
+      if (silent.ok) setUnanswered(await silent.json());
     } catch (err) {
       console.error("Failed to fetch cases:", err);
     } finally {
@@ -621,6 +629,30 @@ export default function DoctorDashboard() {
                 );
               })}
             </div>
+          )}
+
+          {/* Silence is not recovery: a patient who stopped answering is shown to the doctor
+              who approved their case, never closed quietly. */}
+          {unanswered.length > 0 && (
+            <section className="mt-12">
+              <p className="label mb-3">Unanswered follow-ups</p>
+              <p className="text-[13px] text-muted leading-relaxed max-w-[60ch] mb-4">
+                These patients didn&apos;t answer a check-in or its reminder after you approved their case.
+                It may mean they are better, or too unwell to reply.
+              </p>
+              <div className="border-t border-border">
+                {unanswered.map((u) => (
+                  <div key={u.id} className="py-3 border-b border-border grid grid-cols-[minmax(0,1fr)_auto] gap-4 items-baseline">
+                    <span className="text-[15px] truncate">
+                      {u.patient_name} <span className="text-muted">· {u.label}</span>
+                    </span>
+                    <span className="data text-[11px] text-muted">
+                      silent {timeAgo(u.lapsed_at ?? u.opened_at)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
 
           {/* A queue is a promise to somebody. Say so. */}

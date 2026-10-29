@@ -58,5 +58,8 @@ export async function POST(request: NextRequest) {
     // or a raw belief value. Forwarded as-is; do not enrich it here from the branch
     // outputs above, which are doctor-facing only.
     explanation: data.explanation || null,
+    // The follow-up episode this answer opened, if any: the "come back if" signs and when
+    // the first check-in is due.
+    followup: data.followup || null,
   });
 }

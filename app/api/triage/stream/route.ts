@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
                 ? (parseInt(String(guardianLevel).replace("level_", ""), 10) as 1 | 2 | 3)
                 : 2,
               explanation: event.explanation || null,
+              followup: event.followup || null,
             });
           }
         }

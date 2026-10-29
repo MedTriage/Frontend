@@ -29,6 +29,7 @@ import {
   type SourceStatus,
 } from "../components/EvidenceTrace";
 import { postJson, useAccount } from "@/lib/account";
+import { CheckInCard, ComeBackIf, type CheckInAnswer, type FollowUp } from "../components/FollowUp";
 
 // ----- Model definitions with inline SVG logos -----
 interface ModelOption {
@@ -108,6 +109,7 @@ interface ConversationSummary {
   updated_at: string;
   message_count: number;
   highest_triage_level: string | null;
+  checkin_due: boolean;
 }
 
 /* A stored message as the server returns it. */
@@ -271,6 +273,7 @@ interface GuardianOutput {
 interface TriageAPIResponse {
   conversation_id: string;
   message_id: number;
+  followup: FollowUp | null;
   user_input: string;
   intent_type: string;
   title: string;
@@ -355,6 +358,7 @@ async function getTriageResponse(
 ): Promise<{
   conversationId?: string;
   messageId?: number;
+  followup?: FollowUp | null;
   signedOut?: boolean;
   content: string;
   level: TriageLevel;
@@ -491,7 +495,7 @@ async function getTriageResponse(
       data.orchestrator_output?.response ||
       "Response received but content was empty.";
 
-    const ids = { conversationId: data.conversation_id, messageId: data.message_id };
+    const ids = { conversationId: data.conversation_id, messageId: data.message_id, followup: data.followup ?? null };
 
     if (data.triage_level === 1) {
       return {
@@ -673,6 +677,9 @@ export default function ChatPage() {
   // Issued by the server on a conversation's first turn; null until then.
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  // The conversation's follow-up: what to watch for, and whether a check-in is waiting.
+  const [followupState, setFollowupState] = useState<FollowUp | null>(null);
+  const [checkinBusy, setCheckinBusy] = useState(false);
 
   const refreshConversations = useCallback(async () => {
     const res = await fetch("/api/conversations", { cache: "no-store" }).catch(() => null);
@@ -689,6 +696,7 @@ export default function ChatPage() {
       setConversationId(conversation.id);
       setConversationTitle(conversation.title || "Untitled Conversation");
       setIsLocked(conversation.locked);
+      setFollowupState(conversation.followup ?? null);
       setMessages((conversation.messages as StoredMessage[]).map(fromStored));
       setExpandedAudit(null);
       setDeleteConfirm(null);
@@ -710,6 +718,7 @@ export default function ChatPage() {
   const startNewSession = useCallback(() => {
     if (isTyping) return;
     setConversationId(null);
+    setFollowupState(null);
     setMessages([]);
     setConversationTitle("Untitled Conversation");
     setIsLocked(false);
@@ -793,13 +802,16 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages, isTyping, scrollToBottom]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLocked || !account?.verified) return;
+  // `text` is given when the system sends on the patient's behalf (a "worse" check-in);
+  // otherwise it is what they typed.
+  const handleSend = async (text?: string) => {
+    const typed = (text ?? input).trim();
+    if (!typed || isLocked || !account?.verified) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: input.trim(),
+      content: typed,
       timestamp: new Date(),
     };
 
@@ -899,6 +911,7 @@ export default function ChatPage() {
       setConversationId(response.conversationId);
       refreshConversations();
     }
+    if (response.followup !== undefined) setFollowupState(response.followup);
 
     if (response.level === 3) {
       setIsLocked(true);
@@ -909,6 +922,62 @@ export default function ChatPage() {
     if (response.level === 2 && response.conversationId) {
       watchReview(response.conversationId, aiMessage.id);
     }
+  };
+
+  // A watched illness: look every 15 seconds for a check-in coming due while the page is
+  // open, so it appears without a reload. Only the follow-up is refreshed, not the transcript.
+  useEffect(() => {
+    if (!conversationId || followupState?.state !== "active" || followupState.checkin_due) return;
+    const poll = setInterval(async () => {
+      const res = await fetch(`/api/conversations/${conversationId}`, { cache: "no-store" }).catch(() => null);
+      if (res?.ok) setFollowupState((await res.json()).followup ?? null);
+    }, 15000);
+    return () => clearInterval(poll);
+  }, [conversationId, followupState?.state, followupState?.checkin_due]);
+
+  const followupAction = async (action: "checkin" | "postpone" | "stop", body?: unknown) => {
+    if (!followupState) return null;
+    setCheckinBusy(true);
+    const res = await fetch(`/api/followups/${followupState.id}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }).catch(() => null);
+    setCheckinBusy(false);
+    return res?.ok ? res.json() : null;
+  };
+
+  const answerCheckIn = async (answer: CheckInAnswer) => {
+    if (!conversationId) return;
+    const data = await followupAction("checkin", answer);
+    if (!data) return;
+    if (data.outcome === "retriage") {
+      // Worse: back through the full assessment, at level 2 or above (the server sees to it).
+      setFollowupState(data.followup);
+      await handleSend(`It's getting worse.${answer.new ? ` ${answer.new}` : ""}`);
+      return;
+    }
+    if (data.outcome === "reassess") {
+      // Better or the same, but something new was written: only the full assessment can
+      // read it, so it goes through as the next message (not raised to level 2).
+      setFollowupState(data.followup);
+      const overall = answer.overall === "better" ? "It's getting better." : "It's about the same.";
+      await handleSend(`${overall} ${answer.new}`);
+      return;
+    }
+    // The server wrote the exchange into the conversation; show it as stored.
+    await loadSession(conversationId);
+    if (data.outcome === "doctor" && data.message) watchReview(conversationId, String(data.message.id));
+  };
+
+  const postponeCheckIn = async () => {
+    const data = await followupAction("postpone", { hours: 24 });
+    if (data) setFollowupState(data);
+  };
+
+  const stopCheckIns = async () => {
+    const data = await followupAction("stop");
+    if (data) setFollowupState(data);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1077,7 +1146,7 @@ export default function ChatPage() {
             </div>
 
             <button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={!input.trim() || isTyping}
               aria-label="Send message"
               className="shrink-0 w-8 h-8 grid place-items-center bg-accent text-on-accent disabled:opacity-20 disabled:cursor-not-allowed hover:opacity-85 transition-opacity"
@@ -1233,6 +1302,9 @@ export default function ChatPage() {
                         </span>
                         {isActive && (
                           <span className="label mt-1 block">Open now</span>
+                        )}
+                        {session.checkin_due && (
+                          <span className="label mt-1 block">Check-in waiting</span>
                         )}
                       </span>
 
@@ -1773,6 +1845,12 @@ export default function ChatPage() {
             </div>
           ))}
 
+          {followupState?.state === "active" && !followupState.checkin_due && !isTyping && (
+            <div className="rise">
+              <ComeBackIf followup={followupState} />
+            </div>
+          )}
+
           {isTyping && (
             <div className="rise">
               {working}
@@ -1789,6 +1867,15 @@ export default function ChatPage() {
       </main>
 
       <div className="shrink-0 border-t border-border px-5 py-4 bg-background">
+        {followupState?.state === "active" && followupState.checkin_due && !isLocked && !isTyping && (
+          <CheckInCard
+            followup={followupState}
+            busy={checkinBusy}
+            onAnswer={answerCheckIn}
+            onPostpone={postponeCheckIn}
+            onStop={stopCheckIns}
+          />
+        )}
         {composer}
       </div>
 
