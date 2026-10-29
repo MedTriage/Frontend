@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowUp,
   Clock,
@@ -27,15 +28,8 @@ import {
   type Explanation,
   type SourceStatus,
 } from "../components/EvidenceTrace";
-import {
-  getSessions,
-  getSession,
-  createSession,
-  saveSession,
-  deleteSession,
-  type ChatSession,
-  type SerializedMessage,
-} from "@/lib/chatStorage";
+import { postJson, useAccount } from "@/lib/account";
+import { CheckInCard, ComeBackIf, type CheckInAnswer, type FollowUp } from "../components/FollowUp";
 
 // ----- Model definitions with inline SVG logos -----
 interface ModelOption {
@@ -104,6 +98,62 @@ interface Message {
   // Patient-facing account of how the turn was decided. Sanitised on the backend; it
   // carries counts, bands and an outcome sentence, never a diagnosis or a source name.
   explanation?: Explanation | null;
+}
+
+/* A consultation as the server lists it. Consultations live in the account, not on
+   this device: the server issues the id, holds the history, and records the review. */
+interface ConversationSummary {
+  id: string;
+  title: string | null;
+  locked: boolean;
+  updated_at: string;
+  message_count: number;
+  highest_triage_level: string | null;
+  checkin_due: boolean;
+}
+
+/* A stored message as the server returns it. */
+interface StoredMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  triage_level: string | null;
+  explanation: Explanation | null;
+  pipeline: Record<string, unknown> | null;
+  created_at: string;
+  review: { status: "pending" | "verified" | "rejected"; notes: string | null } | null;
+}
+
+function levelNumber(level: string | null | undefined): TriageLevel | undefined {
+  const n = Number(String(level ?? "").replace("level_", ""));
+  return n === 1 || n === 2 || n === 3 ? n : undefined;
+}
+
+function fromStored(m: StoredMessage): Message {
+  const p = m.pipeline ?? {};
+  return {
+    id: String(m.id),
+    role: m.role === "assistant" ? "ai" : "user",
+    content: m.content,
+    triageLevel: levelNumber(m.triage_level),
+    timestamp: new Date(m.created_at),
+    status: m.review?.status,
+    doctorNotes: m.review?.notes ?? undefined,
+    explanation: m.explanation,
+    pipeline:
+      m.role === "assistant"
+        ? {
+            intentType: p.intent_type as string | undefined,
+            intentConfidence: p.intent_confidence as number | undefined,
+            parametricOutput: p.parametric_output as SourceOutput | null,
+            kgragOutput: p.kgrag_output as SourceOutput | null,
+            mcpOutput: p.mcp_output as SourceOutput | null,
+            orchestratorOutput: p.orchestrator_output as OrchestratorOutput | null,
+            orchestratorDecision: p.orchestrator_decision as string | null,
+            guardianOutput: p.guardian_output as GuardianOutput | null,
+          }
+        : undefined,
+  };
 }
 
 // A source resolves, and can resolve AGAIN — the orchestrator's bounded re-retrieval
@@ -221,6 +271,9 @@ interface GuardianOutput {
 }
 
 interface TriageAPIResponse {
+  conversation_id: string;
+  message_id: number;
+  followup: FollowUp | null;
   user_input: string;
   intent_type: string;
   title: string;
@@ -300,10 +353,13 @@ async function readTriageStream(
 
 async function getTriageResponse(
   text: string,
-  conversationId: string,
-  chatHistory: { role: string; content: string }[] = [],
+  conversationId: string | null,
   onProgress: (event: ProgressEvent) => void = () => {}
 ): Promise<{
+  conversationId?: string;
+  messageId?: number;
+  followup?: FollowUp | null;
+  signedOut?: boolean;
   content: string;
   level: TriageLevel;
   title?: string;
@@ -323,11 +379,8 @@ async function getTriageResponse(
     const res = await fetch("/api/triage/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        conversation_id: conversationId,
-        text,
-        chat_history: chatHistory,
-      }),
+      // No history: the server holds the conversation and supplies it to the model.
+      body: JSON.stringify({ conversation_id: conversationId ?? undefined, text }),
       signal: controller.signal,
     });
 
@@ -335,7 +388,22 @@ async function getTriageResponse(
 
     if (!res.ok) {
       const errorBody = await res.json().catch(() => ({}));
-      const detail = errorBody?.error || errorBody?.details || "";
+      const detail = typeof errorBody?.detail === "string" ? errorBody.detail : "";
+
+      if (res.status === 401) {
+        return {
+          signedOut: true,
+          content: "",
+          level: 1,
+          error: { type: "api_error", message: "Your session has ended. Log in again to continue." },
+        };
+      }
+
+      // Refusals the server explains itself: email not confirmed, conversation closed
+      // after an emergency, a reply still being prepared, the hourly limit.
+      if ([403, 409, 423, 429].includes(res.status) && detail) {
+        return { content: "", level: 1, error: { type: "api_error", message: detail } };
+      }
 
       if (res.status === 502) {
         return {
@@ -427,8 +495,11 @@ async function getTriageResponse(
       data.orchestrator_output?.response ||
       "Response received but content was empty.";
 
+    const ids = { conversationId: data.conversation_id, messageId: data.message_id, followup: data.followup ?? null };
+
     if (data.triage_level === 1) {
       return {
+        ...ids,
         content,
         level: 1,
         title: data.title,
@@ -441,6 +512,7 @@ async function getTriageResponse(
 
     if (data.triage_level === 2) {
       return {
+        ...ids,
         content,
         level: 2,
         title: data.title,
@@ -454,6 +526,7 @@ async function getTriageResponse(
     // Level 3: the AI is locked. The backend still supplies the emergency text via the
     // orchestrator, so prefer it and only fall back to the canned message.
     return {
+      ...ids,
       content: data.orchestrator_response || simulateLevel3Response(),
       level: 3,
       title: data.title,
@@ -593,88 +666,38 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
 
-  // ─── The index (past consultations) / session persistence ───
+  // ─── The index (past consultations), held by the server ───
   // Switching consultations is a rare action, so it does not get permanent screen.
   // It opens as a full-width ledger instead of a standing rail.
+  const router = useRouter();
+  const account = useAccount("patient");
+  const [resent, setResent] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  // Issued by the server on a conversation's first turn; null until then.
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  // The conversation's follow-up: what to watch for, and whether a check-in is waiting.
+  const [followupState, setFollowupState] = useState<FollowUp | null>(null);
+  const [checkinBusy, setCheckinBusy] = useState(false);
 
-  // Load sessions from localStorage on mount
-  useEffect(() => {
-    const all = getSessions();
-    setSessions(all);
+  const refreshConversations = useCallback(async () => {
+    const res = await fetch("/api/conversations", { cache: "no-store" }).catch(() => null);
+    if (res?.ok) setConversations(await res.json());
   }, []);
 
-  // Auto-save current session to localStorage whenever messages change
-  useEffect(() => {
-    if (messages.length === 0) return;
-
-    const serialized: SerializedMessage[] = messages.map((m) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      triageLevel: m.triageLevel,
-      timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : (m.timestamp as unknown as string),
-      status: m.status,
-      doctorNotes: m.doctorNotes,
-      errorType: m.errorType,
-      pipeline: m.pipeline,
-    }));
-
-    const highestTriage = messages.reduce<TriageLevel | undefined>((max, m) => {
-      if (!m.triageLevel) return max;
-      if (!max) return m.triageLevel;
-      return m.triageLevel > max ? m.triageLevel : max;
-    }, undefined);
-
-    if (currentSessionId) {
-      const session: ChatSession = {
-        id: currentSessionId,
-        title: conversationTitle,
-        messages: serialized,
-        createdAt: getSession(currentSessionId)?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        highestTriageLevel: highestTriage,
-        isLocked,
-        model: selectedModel.id,
-      };
-      saveSession(session);
-      setSessions(getSessions());
-    } else {
-      const session = createSession(selectedModel.id);
-      session.title = conversationTitle;
-      session.messages = serialized;
-      session.highestTriageLevel = highestTriage;
-      session.isLocked = isLocked;
-      saveSession(session);
-      setCurrentSessionId(session.id);
-      setSessions(getSessions());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, conversationTitle, isLocked]);
-
-  // Load a past session — blocked while a response is in-flight
+  // Load a past consultation — blocked while a response is in-flight
   const loadSession = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (isTyping) return;
-      const session = getSession(id);
-      if (!session) return;
-      setCurrentSessionId(session.id);
-      setConversationTitle(session.title);
-      setIsLocked(session.isLocked);
-      setMessages(
-        session.messages.map((m) => ({
-          ...m,
-          timestamp: new Date(m.timestamp),
-          triageLevel: m.triageLevel as TriageLevel | undefined,
-          errorType: m.errorType as Message["errorType"],
-          pipeline: m.pipeline as PipelineMetadata | undefined,
-        }))
-      );
-      const model = MODEL_OPTIONS.find((o) => o.id === session.model);
-      if (model) setSelectedModel(model);
+      const res = await fetch(`/api/conversations/${id}`, { cache: "no-store" }).catch(() => null);
+      if (!res?.ok) return;
+      const conversation = await res.json();
+      setConversationId(conversation.id);
+      setConversationTitle(conversation.title || "Untitled Conversation");
+      setIsLocked(conversation.locked);
+      setFollowupState(conversation.followup ?? null);
+      setMessages((conversation.messages as StoredMessage[]).map(fromStored));
       setExpandedAudit(null);
       setDeleteConfirm(null);
       setIndexOpen(false);
@@ -682,10 +705,20 @@ export default function ChatPage() {
     [isTyping]
   );
 
+  useEffect(() => {
+    if (!account) return;
+    refreshConversations();
+    // A "your question was reviewed" email links here with ?c=<conversation>.
+    const linked = new URLSearchParams(window.location.search).get("c");
+    if (linked) loadSession(linked);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account]);
+
   // Start a brand new session — blocked while a response is in-flight
   const startNewSession = useCallback(() => {
     if (isTyping) return;
-    setCurrentSessionId(null);
+    setConversationId(null);
+    setFollowupState(null);
     setMessages([]);
     setConversationTitle("Untitled Conversation");
     setIsLocked(false);
@@ -706,16 +739,37 @@ export default function ChatPage() {
   }, [indexOpen]);
 
   const handleDeleteSession = useCallback(
-    (id: string) => {
-      deleteSession(id);
-      setSessions(getSessions());
-      if (id === currentSessionId) {
+    async (id: string) => {
+      await fetch(`/api/conversations/${id}`, { method: "DELETE" }).catch(() => null);
+      await refreshConversations();
+      if (id === conversationId) {
         startNewSession();
       }
       setDeleteConfirm(null);
     },
-    [currentSessionId, startNewSession]
+    [conversationId, refreshConversations, startNewSession]
   );
+
+  // A level_2 answer waits for a doctor. Ask the server about this one conversation
+  // until the review lands — never the whole queue, which is the doctors' business.
+  const watchReview = useCallback((forConversation: string, messageId: string) => {
+    const poll = setInterval(async () => {
+      const res = await fetch(`/api/conversations/${forConversation}`, { cache: "no-store" }).catch(() => null);
+      if (!res?.ok) return;
+      const stored = ((await res.json()).messages as StoredMessage[]).find((m) => String(m.id) === messageId);
+      if (stored?.review && stored.review.status !== "pending") {
+        clearInterval(poll);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, status: stored.review!.status, doctorNotes: stored.review!.notes ?? undefined }
+              : m
+          )
+        );
+      }
+    }, 5000);
+    setTimeout(() => clearInterval(poll), 600000);
+  }, []);
 
   const hasMessages = messages.length > 0;
 
@@ -748,20 +802,16 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages, isTyping, scrollToBottom]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLocked) return;
-
-    // The backend keys the Scribe's persistent medical record on this id, so it must
-    // exist before the first request — currentSessionId is only set once a session has
-    // been persisted, which happens after the first message. Mint it here and reuse it
-    // as the session id so the record and the stored session stay in lockstep.
-    const conversationId = currentSessionId ?? crypto.randomUUID();
-    if (!currentSessionId) setCurrentSessionId(conversationId);
+  // `text` is given when the system sends on the patient's behalf (a "worse" check-in);
+  // otherwise it is what they typed.
+  const handleSend = async (text?: string) => {
+    const typed = (text ?? input).trim();
+    if (!typed || isLocked || !account?.verified) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: input.trim(),
+      content: typed,
       timestamp: new Date(),
     };
 
@@ -779,19 +829,11 @@ export default function ChatPage() {
       textareaRef.current.style.height = "auto";
     }
 
-    const chatHistory = messages
-      .filter((m) => m.role === "user" || m.role === "ai")
-      .map((m) => ({
-        role: m.role === "ai" ? "assistant" : "user",
-        content: m.content,
-      }));
-
     setLiveExplanation(EMPTY_EXPLANATION);
 
     const response = await getTriageResponse(
       userMessage.content,
       conversationId,
-      chatHistory,
       (event) => {
         if (event.type === "stage") {
           setPipelineStage(1); // the message has been read; sources are being consulted
@@ -830,6 +872,11 @@ export default function ChatPage() {
     setPipelineStage(4);
     setIsTyping(false);
 
+    if (response.signedOut) {
+      router.replace("/login?next=/chat");
+      return;
+    }
+
     if (response.title && conversationTitle === "Untitled Conversation") {
       setConversationTitle(response.title);
     }
@@ -847,7 +894,8 @@ export default function ChatPage() {
     }
 
     const aiMessage: Message = {
-      id: (Date.now() + 2).toString(),
+      // The server's message id, so the review can be matched to this entry later.
+      id: response.messageId !== undefined ? String(response.messageId) : (Date.now() + 2).toString(),
       role: "ai",
       content: response.content,
       triageLevel: response.level,
@@ -859,77 +907,77 @@ export default function ChatPage() {
 
     setMessages((prev) => [...prev, aiMessage]);
 
+    if (response.conversationId) {
+      setConversationId(response.conversationId);
+      refreshConversations();
+    }
+    if (response.followup !== undefined) setFollowupState(response.followup);
+
     if (response.level === 3) {
       setIsLocked(true);
     }
 
-    // Route Level 2 to the doctor queue for manual verification
-    if (response.level === 2) {
-      try {
-        const fullHistory = [
-          ...messages
-            .filter((m) => m.role === "user" || m.role === "ai")
-            .map((m) => ({
-              role: m.role as "user" | "ai",
-              content: m.content,
-              triageLevel: m.triageLevel,
-              timestamp: m.timestamp.toISOString(),
-            })),
-          {
-            role: "user" as const,
-            content: userMessage.content,
-            timestamp: userMessage.timestamp.toISOString(),
-          },
-          {
-            role: "ai" as const,
-            content: response.content,
-            triageLevel: response.level,
-            timestamp: aiMessage.timestamp.toISOString(),
-          },
-        ];
-
-        await fetch("/api/doctor/cases", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            patientQuery: userMessage.content,
-            aiAssessment: response.content,
-            chatHistory: fullHistory,
-            pipeline: response.pipeline || undefined,
-          }),
-        });
-      } catch (err) {
-        console.error("Failed to submit case to doctor queue:", err);
-      }
-
-      // Poll the doctor API so the verification status shows up in the transcript
-      const pollInterval = setInterval(async () => {
-        try {
-          const res = await fetch("/api/doctor/cases");
-          if (res.ok) {
-            const cases = await res.json();
-            const matchedCase = cases.find(
-              (c: { patientQuery: string; status: string }) =>
-                c.patientQuery === userMessage.content && c.status !== "pending"
-            );
-            if (matchedCase) {
-              clearInterval(pollInterval);
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === aiMessage.id
-                    ? { ...m, status: matchedCase.status, doctorNotes: matchedCase.doctorNotes || undefined }
-                    : m
-                )
-              );
-            }
-          }
-        } catch {
-          // Silently ignore polling errors
-        }
-      }, 5000);
-
-      setTimeout(() => clearInterval(pollInterval), 600000);
+    // The server already put the level_2 case in the doctors' queue; just watch for the
+    // outcome so it shows up in the transcript.
+    if (response.level === 2 && response.conversationId) {
+      watchReview(response.conversationId, aiMessage.id);
     }
+  };
+
+  // A watched illness: look every 15 seconds for a check-in coming due while the page is
+  // open, so it appears without a reload. Only the follow-up is refreshed, not the transcript.
+  useEffect(() => {
+    if (!conversationId || followupState?.state !== "active" || followupState.checkin_due) return;
+    const poll = setInterval(async () => {
+      const res = await fetch(`/api/conversations/${conversationId}`, { cache: "no-store" }).catch(() => null);
+      if (res?.ok) setFollowupState((await res.json()).followup ?? null);
+    }, 15000);
+    return () => clearInterval(poll);
+  }, [conversationId, followupState?.state, followupState?.checkin_due]);
+
+  const followupAction = async (action: "checkin" | "postpone" | "stop", body?: unknown) => {
+    if (!followupState) return null;
+    setCheckinBusy(true);
+    const res = await fetch(`/api/followups/${followupState.id}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }).catch(() => null);
+    setCheckinBusy(false);
+    return res?.ok ? res.json() : null;
+  };
+
+  const answerCheckIn = async (answer: CheckInAnswer) => {
+    if (!conversationId) return;
+    const data = await followupAction("checkin", answer);
+    if (!data) return;
+    if (data.outcome === "retriage") {
+      // Worse: back through the full assessment, at level 2 or above (the server sees to it).
+      setFollowupState(data.followup);
+      await handleSend(`It's getting worse.${answer.new ? ` ${answer.new}` : ""}`);
+      return;
+    }
+    if (data.outcome === "reassess") {
+      // Better or the same, but something new was written: only the full assessment can
+      // read it, so it goes through as the next message (not raised to level 2).
+      setFollowupState(data.followup);
+      const overall = answer.overall === "better" ? "It's getting better." : "It's about the same.";
+      await handleSend(`${overall} ${answer.new}`);
+      return;
+    }
+    // The server wrote the exchange into the conversation; show it as stored.
+    await loadSession(conversationId);
+    if (data.outcome === "doctor" && data.message) watchReview(conversationId, String(data.message.id));
+  };
+
+  const postponeCheckIn = async () => {
+    const data = await followupAction("postpone", { hours: 24 });
+    if (data) setFollowupState(data);
+  };
+
+  const stopCheckIns = async () => {
+    const data = await followupAction("stop");
+    if (data) setFollowupState(data);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -951,7 +999,30 @@ export default function ChatPage() {
 
   const composer = (
     <div className="w-full max-w-[720px] mx-auto">
-      {isLocked ? (
+      {account && !account.verified ? (
+        <div className="border border-border bg-card p-4">
+          <p className="data text-[11px] uppercase tracking-[0.14em] text-muted mb-1.5">
+            Confirm your email
+          </p>
+          <p className="text-[13px] text-foreground leading-relaxed">
+            Open the link we sent to {account.email} to start a consultation.{" "}
+            {resent ? (
+              "A new link is on its way."
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  await postJson("/api/auth/verify/resend", { email: account.email }).catch(() => null);
+                  setResent(true);
+                }}
+                className="underline underline-offset-4 hover:opacity-70"
+              >
+                Send it again
+              </button>
+            )}
+          </p>
+        </div>
+      ) : isLocked ? (
         <div className="border border-t3 bg-t3/8">
           <div className="flex items-start gap-3 p-4">
             <Lock className="w-4 h-4 text-t3 shrink-0 mt-0.5" />
@@ -1075,7 +1146,7 @@ export default function ChatPage() {
             </div>
 
             <button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={!input.trim() || isTyping}
               aria-label="Send message"
               className="shrink-0 w-8 h-8 grid place-items-center bg-accent text-on-accent disabled:opacity-20 disabled:cursor-not-allowed hover:opacity-85 transition-opacity"
@@ -1122,7 +1193,7 @@ export default function ChatPage() {
           >
             Past consultations
             <span className="data text-[10px] text-muted tabular-nums border border-border px-1">
-              {sessions.length}
+              {conversations.length}
             </span>
           </button>
           {hasMessages && (
@@ -1162,11 +1233,11 @@ export default function ChatPage() {
           </button>
         </div>
 
-        {sessions.length === 0 ? (
+        {conversations.length === 0 ? (
           <div className="py-16">
             <p className="text-[15px] text-muted leading-relaxed max-w-[46ch]">
               Nothing here yet. Consultations are recorded once you send your
-              first message, and stay on this device.
+              first message, and kept with your account.
             </p>
             <button
               onClick={startNewSession}
@@ -1187,10 +1258,10 @@ export default function ChatPage() {
             </div>
 
             <ul>
-              {sessions.map((session) => {
-                const isActive = session.id === currentSessionId;
-                const lvl = session.highestTriageLevel;
-                const date = new Date(session.updatedAt);
+              {conversations.map((session) => {
+                const isActive = session.id === conversationId;
+                const lvl = levelNumber(session.highest_triage_level);
+                const date = new Date(session.updated_at);
                 const confirming = deleteConfirm === session.id;
 
                 return (
@@ -1227,15 +1298,18 @@ export default function ChatPage() {
 
                       <span className="min-w-0">
                         <span className="block text-[14px] truncate text-foreground">
-                          {session.title}
+                          {session.title || "Untitled Conversation"}
                         </span>
                         {isActive && (
                           <span className="label mt-1 block">Open now</span>
                         )}
+                        {session.checkin_due && (
+                          <span className="label mt-1 block">Check-in waiting</span>
+                        )}
                       </span>
 
                       <span className="data hidden sm:block text-[12px] text-muted tabular-nums">
-                        {session.messages.length}
+                        {session.message_count}
                       </span>
 
                       <span className="data hidden sm:block text-[12px] text-muted text-right tabular-nums">
@@ -1271,7 +1345,7 @@ export default function ChatPage() {
 
             <div className="flex items-center justify-between pt-4">
               <p className="data text-[11px] text-muted">
-                Stored on this device
+                Saved to your account
               </p>
               <button
                 onClick={startNewSession}
@@ -1771,6 +1845,12 @@ export default function ChatPage() {
             </div>
           ))}
 
+          {followupState?.state === "active" && !followupState.checkin_due && !isTyping && (
+            <div className="rise">
+              <ComeBackIf followup={followupState} />
+            </div>
+          )}
+
           {isTyping && (
             <div className="rise">
               {working}
@@ -1787,6 +1867,15 @@ export default function ChatPage() {
       </main>
 
       <div className="shrink-0 border-t border-border px-5 py-4 bg-background">
+        {followupState?.state === "active" && followupState.checkin_due && !isLocked && !isTyping && (
+          <CheckInCard
+            followup={followupState}
+            busy={checkinBusy}
+            onAnswer={answerCheckIn}
+            onPostpone={postponeCheckIn}
+            onStop={stopCheckIns}
+          />
+        )}
         {composer}
       </div>
 

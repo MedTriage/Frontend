@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Menu, User, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut, Menu, User, X } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+import type { Account } from "@/lib/account";
 
 const NAV_LINKS = [
   { name: "Overview", link: "/" },
@@ -115,10 +116,24 @@ function Instrument() {
  * the left — each page sets its own wordmark in its lockup, so carrying one here
  * too would read as a repeat.
  */
+const ACCOUNT_LINK =
+  "inline-flex items-center gap-2 h-11 px-6 rounded-full border border-border bg-card text-[14px] text-muted hover:text-foreground hover:border-foreground transition-colors";
+
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState(false);
+  // undefined while unknown, null when signed out. Asked when the menu opens rather
+  // than on every page load: the marketing pages have no other use for it.
+  const [me, setMe] = useState<Account | null | undefined>(undefined);
+
+  const signOut = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    setMe(null);
+    setOpen(false);
+    router.replace("/login");
+  };
 
   const close = () => {
     setShown(false);
@@ -127,6 +142,10 @@ export function Navbar() {
 
   const openMenu = () => {
     setOpen(true);
+    fetch("/api/me", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setMe)
+      .catch(() => setMe(null));
     // Mount at translate-x-full, then flip on the next frame so the transition has
     // two states to move between. Setting both at once would just render it open.
     window.requestAnimationFrame(() => setShown(true));
@@ -226,30 +245,45 @@ export function Navbar() {
                 sections above would claim they matter equally. */}
             <div className="mt-[7vh] pt-7 border-t border-border">
               <p className="label mb-4">Account</p>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Link
-                  href="/login"
-                  onClick={close}
-                  className="inline-flex items-center h-11 px-6 rounded-full border border-border bg-card text-[14px] text-muted hover:text-foreground hover:border-foreground transition-colors"
-                >
-                  Log in
-                </Link>
-                <Link
-                  href="/signup"
-                  onClick={close}
-                  className="inline-flex items-center h-11 px-6 rounded-full bg-accent text-on-accent text-[14px] font-medium hover:opacity-85 transition-opacity"
-                >
-                  Sign up
-                </Link>
-                <Link
-                  href="/profile"
-                  onClick={close}
-                  className="inline-flex items-center gap-2 h-11 px-6 rounded-full border border-border bg-card text-[14px] text-muted hover:text-foreground hover:border-foreground transition-colors"
-                >
-                  <User className="w-4 h-4" />
-                  Profile
-                </Link>
-              </div>
+              {me ? (
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {me.role === "doctor" ? (
+                    <Link href="/doctor" onClick={close} className={ACCOUNT_LINK}>
+                      Review queue
+                    </Link>
+                  ) : (
+                    <>
+                      <Link href="/chat" onClick={close} className={ACCOUNT_LINK}>
+                        Consultations
+                      </Link>
+                      <Link href="/profile" onClick={close} className={ACCOUNT_LINK}>
+                        <User className="w-4 h-4" />
+                        Profile
+                      </Link>
+                    </>
+                  )}
+                  <button type="button" onClick={signOut} className={ACCOUNT_LINK}>
+                    <LogOut className="w-4 h-4" />
+                    Sign out
+                  </button>
+                  <p className="basis-full data text-[11px] text-muted mt-1">Signed in as {me.email}</p>
+                </div>
+              ) : me === null ? (
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <Link href="/login" onClick={close} className={ACCOUNT_LINK}>
+                    Log in
+                  </Link>
+                  <Link
+                    href="/signup"
+                    onClick={close}
+                    className="inline-flex items-center h-11 px-6 rounded-full bg-accent text-on-accent text-[14px] font-medium hover:opacity-85 transition-opacity"
+                  >
+                    Sign up
+                  </Link>
+                </div>
+              ) : (
+                <div className="h-11" aria-hidden />
+              )}
             </div>
           </nav>
         </div>

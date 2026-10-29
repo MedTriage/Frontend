@@ -4,6 +4,8 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Eye, EyeOff, Check } from "lucide-react";
 import { Navbar } from "../components/Navbar";
+import { FormError, Notice } from "../components/AuthForm";
+import { errorMessage, postJson } from "@/lib/account";
 
 interface Requirement {
   label: string;
@@ -11,7 +13,8 @@ interface Requirement {
 }
 
 const REQUIREMENTS: Requirement[] = [
-  { label: "At least 8 characters", test: (pw) => pw.length >= 8 },
+  // The only rule the server enforces; the rest describe strength, not validity.
+  { label: "At least 10 characters", test: (pw) => pw.length >= 10 },
   { label: "One uppercase letter", test: (pw) => /[A-Z]/.test(pw) },
   { label: "One lowercase letter", test: (pw) => /[a-z]/.test(pw) },
   { label: "One number", test: (pw) => /\d/.test(pw) },
@@ -33,8 +36,15 @@ function strengthLabel(passed: number): string {
 export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [resent, setResent] = useState(false);
 
   const passed = useMemo(
     () => REQUIREMENTS.filter((r) => r.test(password)).length,
@@ -42,6 +52,65 @@ export default function SignupPage() {
   );
 
   const mismatch = confirmPassword.length > 0 && confirmPassword !== password;
+  const ready = name.trim() && email.trim() && password.length >= 10 && confirmPassword === password && consent;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ready) return;
+    setBusy(true);
+    setError(null);
+    const { ok, data } = await postJson("/api/auth/signup", { name, email, password, consent }).catch(() => ({
+      ok: false,
+      status: 0,
+      data: { detail: "Couldn't reach MedTriage. Check your connection and try again." },
+    }));
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessage(data, "That didn't work. Try again."));
+      return;
+    }
+    setSentTo(email);
+  };
+
+  const resend = async () => {
+    await postJson("/api/auth/verify/resend", { email: sentTo }).catch(() => null);
+    setResent(true);
+  };
+
+  if (sentTo) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-5 py-16">
+          <div className="w-full max-w-[380px] rise">
+            <p className="label mb-4">Create an account</p>
+            <h1 className="display text-[1.9rem] mb-2">Check your email.</h1>
+            <p className="text-[15px] text-muted leading-relaxed mb-8">
+              We sent a link to <span className="text-foreground">{sentTo}</span>. Open it to
+              confirm the address, then log in. The link expires in 24 hours.
+            </p>
+            {resent ? (
+              <Notice>Sent again. Give it a minute, and check your spam folder.</Notice>
+            ) : (
+              <button
+                type="button"
+                onClick={resend}
+                className="text-[14px] text-muted hover:text-foreground underline underline-offset-4 transition-colors"
+              >
+                Didn&apos;t get it? Send it again
+              </button>
+            )}
+            <p className="text-[14px] text-muted mt-8 pt-6 border-t border-border">
+              Confirmed already?{" "}
+              <Link href="/login" className="text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity">
+                Log in
+              </Link>
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -56,7 +125,7 @@ export default function SignupPage() {
             still known the next time you ask.
           </p>
 
-          <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
+          <form onSubmit={submit} className="space-y-5">
             <div>
               <label htmlFor="name" className="label block mb-2">
                 Name
@@ -64,7 +133,10 @@ export default function SignupPage() {
               <input
                 id="name"
                 type="text"
+                required
                 autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 placeholder="Jane Doe"
                 className="w-full h-11 px-3.5 bg-card border border-border text-[14px] placeholder:text-muted/70 focus:outline-none focus:border-foreground transition-colors"
               />
@@ -77,7 +149,10 @@ export default function SignupPage() {
               <input
                 id="email"
                 type="email"
+                required
                 autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 className="w-full h-11 px-3.5 bg-card border border-border text-[14px] placeholder:text-muted/70 focus:outline-none focus:border-foreground transition-colors"
               />
@@ -192,11 +267,28 @@ export default function SignupPage() {
               )}
             </div>
 
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="w-3.5 h-3.5 mt-[3px] shrink-0 accent-[var(--foreground)]"
+              />
+              <span className="text-[13px] text-muted leading-relaxed">
+                I understand MedTriage is a research demo, not medical advice. My messages are
+                stored and sent to an AI model provider (OpenRouter) to produce answers, and a
+                doctor reviewing one of my questions will see my profile.
+              </span>
+            </label>
+
+            {error && <FormError>{error}</FormError>}
+
             <button
               type="submit"
-              className="w-full h-11 bg-accent text-on-accent text-sm font-medium hover:opacity-85 transition-opacity"
+              disabled={!ready || busy}
+              className="w-full h-11 bg-accent text-on-accent text-sm font-medium hover:opacity-85 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Create account
+              {busy ? "Creating account…" : "Create account"}
             </button>
           </form>
 
