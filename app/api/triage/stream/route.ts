@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { BACKEND_URL, authHeader, readJson, sameOrigin } from "@/lib/backend";
+import { clientPayload } from "@/app/lib/triage-payload";
 
 // Streaming keeps bytes moving, which is what stops a platform from killing a request
 // that is still working — but the pipeline can still outlast a serverless ceiling, so
@@ -19,20 +20,23 @@ export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) {
     return Response.json({ detail: "Cross-site request refused." }, { status: 403 });
   }
-  const body = (await readJson(request)) as { conversation_id?: unknown; text?: unknown } | undefined;
+  const body = (await readJson(request)) as
+    | { conversation_id?: unknown; text?: unknown; mode?: unknown }
+    | undefined;
 
   if (!body?.text || typeof body.text !== "string") {
     return Response.json({ detail: "Missing required field: text" }, { status: 400 });
   }
   // The server issues conversation ids and supplies the history itself; see /api/triage.
   const conversation_id = typeof body.conversation_id === "string" ? body.conversation_id : undefined;
+  const mode = body.mode === "child" ? "child" : "triage";
 
   let upstream: Response;
   try {
     upstream = await fetch(`${BACKEND_URL}/process/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...authHeader(request) },
-      body: JSON.stringify({ conversation_id, text: body.text }),
+      body: JSON.stringify({ conversation_id, text: body.text, mode }),
     });
   } catch {
     return Response.json(
@@ -86,31 +90,9 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
-            const guardian = event.guardian_output as { triage_level?: string } | null;
-            const guardianLevel = guardian?.triage_level;
-            send({
-              type: "done",
-              conversation_id: event.conversation_id,
-              message_id: event.message_id,
-              title: event.title,
-              intent_type: event.intent_type,
-              intent_confidence: event.intent_confidence,
-              parametric_output: event.parametric_output || null,
-              kgrag_output: event.kgrag_output || null,
-              mcp_output: event.mcp_output || null,
-              orchestrator_output: event.orchestrator_output || null,
-              orchestrator_decision: event.orchestrator_decision || null,
-              orchestrator_response: event.orchestrator_response || null,
-              guardian_output: event.guardian_output || null,
-              is_emergency: event.is_emergency ?? false,
-              // Same rule as /api/triage: a missing Guardian level fails safe to
-              // physician review, never to level 1.
-              triage_level: guardianLevel
-                ? (parseInt(String(guardianLevel).replace("level_", ""), 10) as 1 | 2 | 3)
-                : 2,
-              explanation: event.explanation || null,
-              followup: event.followup || null,
-            });
+            // Same shape as /api/triage, including its fail-safe: a missing Guardian
+            // level becomes physician review, never level 1 (child mode excepted).
+            send({ type: "done", ...clientPayload(event) });
           }
         }
       } catch {

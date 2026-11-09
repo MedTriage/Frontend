@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
+  Baby,
   Clock,
   CheckCircle2,
   XCircle,
@@ -30,6 +31,7 @@ import {
 } from "../components/EvidenceTrace";
 import { postJson, useAccount } from "@/lib/account";
 import { CheckInCard, ComeBackIf, type CheckInAnswer, type FollowUp } from "../components/FollowUp";
+import { ChildAnswer, type ChildView } from "../components/ChildAnswer";
 
 // ----- Model definitions with inline SVG logos -----
 interface ModelOption {
@@ -98,6 +100,8 @@ interface Message {
   // Patient-facing account of how the turn was decided. Sanitised on the backend; it
   // carries counts, bands and an outcome sentence, never a diagnosis or a source name.
   explanation?: Explanation | null;
+  // Child-health answers only: no level, the guidelines' answer and the signs to watch.
+  child?: ChildView | null;
 }
 
 /* A consultation as the server lists it. Consultations live in the account, not on
@@ -106,6 +110,7 @@ interface ConversationSummary {
   id: string;
   title: string | null;
   locked: boolean;
+  mode: "triage" | "child";
   updated_at: string;
   message_count: number;
   highest_triage_level: string | null;
@@ -120,6 +125,7 @@ interface StoredMessage {
   triage_level: string | null;
   explanation: Explanation | null;
   pipeline: Record<string, unknown> | null;
+  child: ChildView | null;
   created_at: string;
   review: { status: "pending" | "verified" | "rejected"; notes: string | null } | null;
 }
@@ -140,8 +146,9 @@ function fromStored(m: StoredMessage): Message {
     status: m.review?.status,
     doctorNotes: m.review?.notes ?? undefined,
     explanation: m.explanation,
+    child: m.child,
     pipeline:
-      m.role === "assistant"
+      m.role === "assistant" && !m.child
         ? {
             intentType: p.intent_type as string | undefined,
             intentConfidence: p.intent_confidence as number | undefined,
@@ -271,6 +278,10 @@ interface GuardianOutput {
 }
 
 interface TriageAPIResponse {
+  // "child" for a child-health turn, which has no level and carries `response` + `child`.
+  mode?: "triage" | "child";
+  response?: string;
+  child?: ChildView | null;
   conversation_id: string;
   message_id: number;
   followup: FollowUp | null;
@@ -286,7 +297,7 @@ interface TriageAPIResponse {
   orchestrator_response: string | null;
   guardian_output: GuardianOutput | null;
   is_emergency: boolean;
-  triage_level: TriageLevel;
+  triage_level: TriageLevel | null;
   explanation: Explanation | null;
 }
 
@@ -354,14 +365,19 @@ async function readTriageStream(
 async function getTriageResponse(
   text: string,
   conversationId: string | null,
-  onProgress: (event: ProgressEvent) => void = () => {}
+  onProgress: (event: ProgressEvent) => void = () => {},
+  // Read by the backend only for a new conversation; an existing one keeps its own.
+  mode: "triage" | "child" = "triage"
 ): Promise<{
   conversationId?: string;
   messageId?: number;
   followup?: FollowUp | null;
   signedOut?: boolean;
   content: string;
-  level: TriageLevel;
+  // Absent for a child-health answer, which has no triage level by design.
+  level?: TriageLevel;
+  mode?: "triage" | "child";
+  child?: ChildView | null;
   title?: string;
   intentType?: string;
   confidence?: number;
@@ -380,7 +396,7 @@ async function getTriageResponse(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // No history: the server holds the conversation and supplies it to the model.
-      body: JSON.stringify({ conversation_id: conversationId ?? undefined, text }),
+      body: JSON.stringify({ conversation_id: conversationId ?? undefined, text, mode }),
       signal: controller.signal,
     });
 
@@ -452,6 +468,20 @@ async function getTriageResponse(
           message:
             "The pipeline stopped before it finished. No assessment was produced, so none is being displayed. Try again.",
         },
+      };
+    }
+
+    // A child-health answer: no level and no pipeline audit, just the backend-composed
+    // answer with any "go to hospital now" banner, and the signs to watch.
+    if (data.mode === "child") {
+      return {
+        conversationId: data.conversation_id,
+        messageId: data.message_id,
+        followup: null,
+        content: data.response ?? "",
+        mode: "child",
+        child: data.child ?? null,
+        title: data.title,
       };
     }
 
@@ -655,7 +685,10 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [conversationTitle, setConversationTitle] = useState<string>("Untitled Conversation");
-  const [mode, setMode] = useState<"triage" | "drugs">("triage");
+  const [mode, setMode] = useState<"triage" | "drugs" | "child">("triage");
+  // The open conversation's mode, as the server stored it on its first turn; null before.
+  // A conversation can't change mode, so picking the other one starts a new chat.
+  const [conversationMode, setConversationMode] = useState<"triage" | "child" | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelOption>(MODEL_OPTIONS[0]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [pipelineStage, setPipelineStage] = useState(0);
@@ -696,6 +729,9 @@ export default function ChatPage() {
       setConversationId(conversation.id);
       setConversationTitle(conversation.title || "Untitled Conversation");
       setIsLocked(conversation.locked);
+      const stored = conversation.mode === "child" ? "child" : "triage";
+      setConversationMode(stored);
+      setMode((current) => (stored === "child" ? "child" : current === "child" ? "triage" : current));
       setFollowupState(conversation.followup ?? null);
       setMessages((conversation.messages as StoredMessage[]).map(fromStored));
       setExpandedAudit(null);
@@ -718,6 +754,7 @@ export default function ChatPage() {
   const startNewSession = useCallback(() => {
     if (isTyping) return;
     setConversationId(null);
+    setConversationMode(null);
     setFollowupState(null);
     setMessages([]);
     setConversationTitle("Untitled Conversation");
@@ -727,6 +764,13 @@ export default function ChatPage() {
     setDeleteConfirm(null);
     setIndexOpen(false);
   }, [isTyping]);
+
+  // A conversation keeps the mode it started in, so moving between child health and the
+  // other modes starts a new one.
+  const pickMode = (next: "triage" | "drugs" | "child") => {
+    if (conversationMode && (next === "child") !== (conversationMode === "child")) startNewSession();
+    setMode(next);
+  };
 
   // Escape closes the index — it is an overlay, and overlays must be dismissible.
   useEffect(() => {
@@ -829,7 +873,9 @@ export default function ChatPage() {
       textareaRef.current.style.height = "auto";
     }
 
-    setLiveExplanation(EMPTY_EXPLANATION);
+    // A child-health turn has no three-source evidence trace to fill in while it works.
+    const childTurn = (conversationMode ?? (mode === "child" ? "child" : "triage")) === "child";
+    setLiveExplanation(childTurn ? null : EMPTY_EXPLANATION);
 
     const response = await getTriageResponse(
       userMessage.content,
@@ -861,7 +907,8 @@ export default function ChatPage() {
             differential: event.differential ?? prev?.differential,
           }));
         }
-      }
+      },
+      childTurn ? "child" : "triage"
     );
 
     setLiveExplanation(null);
@@ -903,12 +950,14 @@ export default function ChatPage() {
       status: response.level === 2 ? "pending" : undefined,
       pipeline: response.pipeline,
       explanation: response.explanation,
+      child: response.child,
     };
 
     setMessages((prev) => [...prev, aiMessage]);
 
     if (response.conversationId) {
       setConversationId(response.conversationId);
+      setConversationMode(response.mode === "child" ? "child" : "triage");
       refreshConversations();
     }
     if (response.followup !== undefined) setFollowupState(response.followup);
@@ -1047,7 +1096,9 @@ export default function ChatPage() {
             placeholder={
               mode === "drugs"
                 ? "Ask about a drug — interactions, dosing, labelling."
-                : "Describe your symptoms, or ask a clinical question."
+                : mode === "child"
+                  ? "Ask about your child's health."
+                  : "Describe your symptoms, or ask a clinical question."
             }
             className="w-full bg-transparent px-4 pt-4 pb-2 text-[14px] leading-relaxed text-foreground placeholder:text-muted/70 focus:outline-none resize-none min-h-[76px]"
             disabled={isTyping}
@@ -1058,7 +1109,7 @@ export default function ChatPage() {
           <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-t border-border">
             <div className="flex items-center gap-1 min-w-0">
               <button
-                onClick={() => setMode("triage")}
+                onClick={() => pickMode("triage")}
                 aria-pressed={mode === "triage"}
                 className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] transition-colors ${
                   mode === "triage"
@@ -1070,7 +1121,7 @@ export default function ChatPage() {
                 Triage
               </button>
               <button
-                onClick={() => setMode("drugs")}
+                onClick={() => pickMode("drugs")}
                 aria-pressed={mode === "drugs"}
                 className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] transition-colors ${
                   mode === "drugs"
@@ -1080,6 +1131,18 @@ export default function ChatPage() {
               >
                 <Pill className="w-3.5 h-3.5" />
                 Drugs
+              </button>
+              <button
+                onClick={() => pickMode("child")}
+                aria-pressed={mode === "child"}
+                className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] transition-colors ${
+                  mode === "child"
+                    ? "bg-accent text-on-accent"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                <Baby className="w-3.5 h-3.5" />
+                Child health
               </button>
 
               <span className="w-px h-4 bg-border mx-1.5" />
@@ -1406,6 +1469,10 @@ export default function ChatPage() {
           </button>
         </div>
       );
+    }
+
+    if (message.role === "ai" && message.child) {
+      return <ChildAnswer child={message.child} timestamp={message.timestamp} />;
     }
 
     if (message.role === "ai" && message.triageLevel) {
@@ -1777,6 +1844,20 @@ export default function ChatPage() {
     </div>
   );
 
+  // Child health has one step to show: the guidelines being read and answered from.
+  const childWorking = (
+    <div className="border-l-2 border-l-border pl-4">
+      <p className="label mb-3">Working</p>
+      <div className="grid grid-cols-[8.5rem_minmax(0,1fr)] gap-3 items-center py-2.5 border-y border-border">
+        <span className="data text-[11px] text-foreground">Reading the guidelines</span>
+        <span className="relative h-[2px] bg-border overflow-hidden">
+          <span className="sweep absolute inset-y-0 left-0 w-1/3 bg-foreground" />
+        </span>
+      </div>
+    </div>
+  );
+  const childConversation = (conversationMode ?? (mode === "child" ? "child" : "triage")) === "child";
+
   /* ── Empty state ── */
 
   if (!hasMessages) {
@@ -1853,7 +1934,7 @@ export default function ChatPage() {
 
           {isTyping && (
             <div className="rise">
-              {working}
+              {childConversation ? childWorking : working}
               {/* The same graph that will sit under the answer, filling in as the
                   sources actually report. The wait becomes the explanation. */}
               {liveExplanation && (
