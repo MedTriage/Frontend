@@ -32,6 +32,7 @@ import {
 import { postJson, useAccount } from "@/lib/account";
 import { CheckInCard, ComeBackIf, type CheckInAnswer, type FollowUp } from "../components/FollowUp";
 import { ChildAnswer, type ChildView } from "../components/ChildAnswer";
+import { PrescriptionLink, type PrescriptionRef } from "../components/PrescriptionLink";
 
 // ----- Model definitions with inline SVG logos -----
 interface ModelOption {
@@ -102,6 +103,8 @@ interface Message {
   explanation?: Explanation | null;
   // Child-health answers only: no level, the guidelines' answer and the signs to watch.
   child?: ChildView | null;
+  // Where to open a prescription the patient may see, once a doctor has issued it.
+  prescription?: PrescriptionRef | null;
 }
 
 /* A consultation as the server lists it. Consultations live in the account, not on
@@ -285,6 +288,7 @@ interface TriageAPIResponse {
   conversation_id: string;
   message_id: number;
   followup: FollowUp | null;
+  prescription?: PrescriptionRef | null;
   user_input: string;
   intent_type: string;
   title: string;
@@ -372,6 +376,7 @@ async function getTriageResponse(
   conversationId?: string;
   messageId?: number;
   followup?: FollowUp | null;
+  prescription?: PrescriptionRef | null;
   signedOut?: boolean;
   content: string;
   // Absent for a child-health answer, which has no triage level by design.
@@ -525,7 +530,12 @@ async function getTriageResponse(
       data.orchestrator_output?.response ||
       "Response received but content was empty.";
 
-    const ids = { conversationId: data.conversation_id, messageId: data.message_id, followup: data.followup ?? null };
+    const ids = {
+      conversationId: data.conversation_id,
+      messageId: data.message_id,
+      followup: data.followup ?? null,
+      prescription: data.prescription ?? null,
+    };
 
     if (data.triage_level === 1) {
       return {
@@ -733,7 +743,15 @@ export default function ChatPage() {
       setConversationMode(stored);
       setMode((current) => (stored === "child" ? "child" : current === "child" ? "triage" : current));
       setFollowupState(conversation.followup ?? null);
-      setMessages((conversation.messages as StoredMessage[]).map(fromStored));
+      const links = new Map(
+        ((conversation.prescriptions ?? []) as PrescriptionRef[]).map((link) => [String(link.message_id), link])
+      );
+      setMessages(
+        (conversation.messages as StoredMessage[]).map((m) => ({
+          ...fromStored(m),
+          prescription: links.get(String(m.id)) ?? null,
+        }))
+      );
       setExpandedAudit(null);
       setDeleteConfirm(null);
       setIndexOpen(false);
@@ -800,13 +818,22 @@ export default function ChatPage() {
     const poll = setInterval(async () => {
       const res = await fetch(`/api/conversations/${forConversation}`, { cache: "no-store" }).catch(() => null);
       if (!res?.ok) return;
-      const stored = ((await res.json()).messages as StoredMessage[]).find((m) => String(m.id) === messageId);
+      const conversation = await res.json();
+      const stored = (conversation.messages as StoredMessage[]).find((m) => String(m.id) === messageId);
       if (stored?.review && stored.review.status !== "pending") {
         clearInterval(poll);
+        const link = ((conversation.prescriptions ?? []) as PrescriptionRef[]).find(
+          (p) => String(p.message_id) === messageId
+        );
         setMessages((prev) =>
           prev.map((m) =>
             m.id === messageId
-              ? { ...m, status: stored.review!.status, doctorNotes: stored.review!.notes ?? undefined }
+              ? {
+                  ...m,
+                  status: stored.review!.status,
+                  doctorNotes: stored.review!.notes ?? undefined,
+                  prescription: link ?? null,
+                }
               : m
           )
         );
@@ -951,6 +978,7 @@ export default function ChatPage() {
       pipeline: response.pipeline,
       explanation: response.explanation,
       child: response.child,
+      prescription: response.prescription,
     };
 
     setMessages((prev) => [...prev, aiMessage]);
@@ -1546,6 +1574,8 @@ export default function ChatPage() {
               )}
             </div>
           )}
+
+          {message.prescription && <PrescriptionLink prescription={message.prescription} />}
 
           {/* Where this answer came from. Sources are named for what they are —
               never for how they are built. */}

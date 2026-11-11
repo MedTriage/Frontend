@@ -62,5 +62,8 @@ export function clientPayload(data: Data): Data {
     // The follow-up episode this answer opened, if any: the "come back if" signs and when
     // the first check-in is due.
     followup: data.followup || null,
+    // Where to find a prescription the patient may see: its id, status and message. Never its
+    // contents, which only the sheet shows, under its own label.
+    prescription: data.prescription || null,
   };
 }

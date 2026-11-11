@@ -38,3 +38,9 @@ test("a child-health turn has no level and carries its answer and signs", () => 
   assert.deepEqual(out.child, child);
   assert.equal(out.followup, null);
 });
+
+test("a triage turn forwards the link to a visible prescription, and nothing else about it", () => {
+  const link = { id: "r1", status: "draft", message_id: 7 };
+  assert.deepEqual(clientPayload({ ...TRIAGE, prescription: link }).prescription, link);
+  assert.equal(clientPayload(TRIAGE).prescription, null);
+});

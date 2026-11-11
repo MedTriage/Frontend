@@ -10,7 +10,14 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { Navbar } from "../components/Navbar";
-import { useAccount } from "@/lib/account";
+import {
+  PrescriptionEditor,
+  editableFrom,
+  forSending,
+  missingField,
+  type EditablePrescription,
+} from "../components/PrescriptionEditor";
+import { errorMessage, useAccount } from "@/lib/account";
 
 interface SourceOutput {
   probable_diagnosis?: string | null;
@@ -57,6 +64,20 @@ interface CaseRow {
   reviewed_at: string | null;
   patient_name: string | null;
   question: string;
+  // The prescriber said "go to hospital now" on a case the guardian held. Listed first.
+  hospital_flag?: boolean;
+}
+
+interface PrescriptionView {
+  id: string;
+  status: "draft" | "issued" | "discarded";
+  draft: Record<string, unknown> | null;
+  problems: string[];
+  final: EditablePrescription | null;
+  hospital_flag: boolean;
+  issued_by_name: string | null;
+  issued_by_registration: string | null;
+  issued_at: string | null;
 }
 
 interface ProfileEntry {
@@ -78,6 +99,7 @@ interface CaseDetail extends CaseRow {
     conditions: ProfileEntry[];
   } | null;
   profile_changed_since: boolean;
+  prescription: PrescriptionView | null;
 }
 
 interface Pipeline {
@@ -150,6 +172,11 @@ export default function DoctorDashboard() {
   const [expandedCase, setExpandedCase] = useState<string | null>(null);
   const [expandedAudit, setExpandedAudit] = useState<string | null>(null);
   const [notesMap, setNotesMap] = useState<Record<string, string>>({});
+  // The doctor's edits to each open case's prescription.
+  const [rxMap, setRxMap] = useState<Record<string, EditablePrescription>>({});
+  // Why the backend refused to issue: an allergy conflict to confirm, or anything else to fix.
+  const [allergyMap, setAllergyMap] = useState<Record<string, { message: string; confirmed: boolean }>>({});
+  const [issueError, setIssueError] = useState<Record<string, string>>({});
   const [updatingCase, setUpdatingCase] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Patients who went silent after a case this doctor approved.
@@ -193,6 +220,7 @@ export default function DoctorDashboard() {
     if (res?.ok) {
       const detail: CaseDetail = await res.json();
       setDetails((prev) => ({ ...prev, [caseId]: detail }));
+      setRxMap((prev) => (prev[caseId] ? prev : { ...prev, [caseId]: editableFrom(detail.prescription?.draft) }));
     } else if (res?.status === 404) {
       // Another doctor decided it in the meantime; it has left this queue.
       setNotice("That case was just reviewed by another doctor.");
@@ -206,6 +234,7 @@ export default function DoctorDashboard() {
     status: "verified" | "rejected"
   ) => {
     setUpdatingCase(caseId);
+    setIssueError((prev) => ({ ...prev, [caseId]: "" }));
     try {
       const res = await fetch(`/api/doctor/cases/${caseId}`, {
         method: "PATCH",
@@ -213,12 +242,28 @@ export default function DoctorDashboard() {
         body: JSON.stringify({
           status,
           notes: notesMap[caseId] || null,
+          // What the doctor sees is what is issued, including nothing at all.
+          ...(status === "verified" && rxMap[caseId] ? { prescription: forSending(rxMap[caseId]) } : {}),
+          confirm_allergy: allergyMap[caseId]?.confirmed ?? false,
         }),
       });
       if (res.ok) {
         const updated: { status: CaseStatus; notes: string | null; reviewed_at: string } = await res.json();
-        setCases((prev) => prev.map((c) => (c.id === caseId ? { ...c, ...updated } : c)));
+        setCases((prev) => prev.map((c) => (c.id === caseId ? { ...c, ...updated, hospital_flag: false } : c)));
         setDetails((prev) => (prev[caseId] ? { ...prev, [caseId]: { ...prev[caseId], ...updated } } : prev));
+        // Re-read the case so its issued prescription shows as the patient will see it.
+        const fresh = await fetch(`/api/doctor/cases/${caseId}`, { cache: "no-store" }).catch(() => null);
+        if (fresh?.ok) {
+          const detail: CaseDetail = await fresh.json();
+          setDetails((prev) => ({ ...prev, [caseId]: detail }));
+        }
+        return;
+      }
+      const body = await res.clone().json().catch(() => null);
+      if (res.status === 409 && body?.detail?.code === "allergy_conflict") {
+        setAllergyMap((prev) => ({ ...prev, [caseId]: { message: body.detail.message, confirmed: false } }));
+      } else if (res.status === 422) {
+        setIssueError((prev) => ({ ...prev, [caseId]: errorMessage(body, "This prescription can't be issued yet.") }));
       } else if (res.status === 404 || res.status === 409) {
         setNotice("That case was already reviewed by another doctor.");
         setExpandedCase(null);
@@ -337,6 +382,12 @@ export default function DoctorDashboard() {
                         <span className="block text-[15px] truncate">
                           {c.question}
                         </span>
+                        {c.hospital_flag && (
+                          <span className="flex items-center gap-1.5 text-[12px] font-medium text-t3 mt-0.5">
+                            <CircleAlert className="w-3.5 h-3.5 shrink-0" />
+                            Prescriber suggests hospital now
+                          </span>
+                        )}
                         <span className={`data text-[11px] ${st.text} sm:hidden`}>
                           {st.label}
                         </span>
@@ -544,6 +595,45 @@ export default function DoctorDashboard() {
                             </div>
                           )}
 
+                          {/* The prescription: the prescriber's draft to edit, or what was issued */}
+                          {c.status === "pending" && rxMap[c.id] && (
+                            <div className="px-5 py-4 border-b border-border">
+                              {d.prescription?.hospital_flag && (
+                                <p className="flex items-start gap-2 text-[13px] font-medium text-t3 mb-3 leading-snug">
+                                  <CircleAlert className="w-4 h-4 shrink-0 mt-px" />
+                                  The prescriber suggests this patient should go to hospital now. They are still
+                                  waiting on your review.
+                                </p>
+                              )}
+                              <PrescriptionEditor
+                                value={rxMap[c.id]}
+                                onChange={(next) => {
+                                  setRxMap((prev) => ({ ...prev, [c.id]: next }));
+                                  // A changed prescription is a new decision about any allergy.
+                                  setAllergyMap((prev) => {
+                                    const rest = { ...prev };
+                                    delete rest[c.id];
+                                    return rest;
+                                  });
+                                }}
+                                problems={d.prescription?.problems ?? []}
+                              />
+                            </div>
+                          )}
+                          {c.status !== "pending" && d.prescription?.status === "issued" && d.prescription.final && (
+                            <div className="px-5 py-4 border-b border-border">
+                              <p className="label mb-2">Prescription issued</p>
+                              <p className="text-[14px] font-medium">{d.prescription.final.diagnosis}</p>
+                              <ul className="mt-1.5 space-y-0.5">
+                                {d.prescription.final.medications.map((m, i) => (
+                                  <li key={i} className="text-[13px] leading-relaxed">
+                                    {m.drug} {m.dose}, {m.route}, {m.frequency}, for {m.duration}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
                           {/* Decide */}
                           {c.status === "pending" ? (
                             <div className="px-5 py-4">
@@ -567,17 +657,43 @@ export default function DoctorDashboard() {
                                 className="w-full bg-background border border-border px-3 py-2.5 text-[14px] leading-relaxed placeholder:text-muted/70 focus:outline-none focus:border-foreground transition-colors resize-none"
                               />
 
-                              <div className="flex flex-wrap gap-2 mt-3">
-                                <button
-                                  onClick={() =>
-                                    handleUpdateCase(c.id, "verified")
-                                  }
-                                  disabled={busy}
-                                  className="h-10 px-4 inline-flex items-center gap-2 bg-accent text-on-accent text-[13px] font-medium hover:opacity-85 disabled:opacity-40 transition-opacity"
-                                >
-                                  <Check className="w-4 h-4" />
-                                  {busy ? "Sending…" : "Approve and send"}
-                                </button>
+                              {allergyMap[c.id] && (
+                                <div role="alert" className="mt-3 border border-t3 px-3 py-2.5">
+                                  <p className="text-[13px] font-medium text-t3 leading-snug">{allergyMap[c.id].message}</p>
+                                  <label className="mt-2 flex items-center gap-2 text-[13px]">
+                                    <input
+                                      type="checkbox"
+                                      checked={allergyMap[c.id].confirmed}
+                                      onChange={(e) =>
+                                        setAllergyMap((prev) => ({
+                                          ...prev,
+                                          [c.id]: { ...prev[c.id], confirmed: e.target.checked },
+                                        }))
+                                      }
+                                      className="accent-[var(--foreground)]"
+                                    />
+                                    I&apos;ve checked this and want to prescribe it anyway
+                                  </label>
+                                </div>
+                              )}
+                              {(() => {
+                                const rx = rxMap[c.id];
+                                const missing = rx ? missingField(rx) : null;
+                                const message = missing ?? issueError[c.id];
+                                const blocked = Boolean(missing) || (allergyMap[c.id] !== undefined && !allergyMap[c.id].confirmed);
+                                const issuing = Boolean(rx && rx.medications.length > 0);
+                                return (
+                                  <>
+                                    {message && <p className="mt-3 text-[13px] text-t2 leading-snug">{message}</p>}
+                                    <div className="flex flex-wrap gap-2 mt-3">
+                                      <button
+                                        onClick={() => handleUpdateCase(c.id, "verified")}
+                                        disabled={busy || blocked}
+                                        className="h-10 px-4 inline-flex items-center gap-2 bg-accent text-on-accent text-[13px] font-medium hover:opacity-85 disabled:opacity-40 transition-opacity"
+                                      >
+                                        <Check className="w-4 h-4" />
+                                        {busy ? "Sending…" : issuing ? "Approve and issue" : "Approve and send"}
+                                      </button>
                                 <button
                                   onClick={() =>
                                     handleUpdateCase(c.id, "rejected")
@@ -588,7 +704,10 @@ export default function DoctorDashboard() {
                                   <X className="w-4 h-4" />
                                   Reject
                                 </button>
-                              </div>
+                                    </div>
+                                  </>
+                                );
+                              })()}
 
                               <p className="text-[13px] text-muted mt-3 leading-relaxed max-w-[56ch]">
                                 The patient is waiting on this and cannot see the

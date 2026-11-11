@@ -253,6 +253,9 @@ export function Navbar() {
                     </Link>
                   ) : (
                     <>
+                      <Link href="/dashboard" onClick={close} className={ACCOUNT_LINK}>
+                        Dashboard
+                      </Link>
                       <Link href="/chat" onClick={close} className={ACCOUNT_LINK}>
                         Consultations
                       </Link>

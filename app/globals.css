@@ -53,6 +53,20 @@
   --shadow-1: 0 1px 2px rgba(20, 24, 27, 0.04), 0 6px 16px rgba(20, 24, 27, 0.05);
   --shadow-2: 0 2px 4px rgba(20, 24, 27, 0.05), 0 18px 44px rgba(20, 24, 27, 0.09);
   --radius: 8px;
+
+  /* The patient dashboard, and the one place "colour means risk" does not hold: by the owner's
+     decision of 2026-11-09 it uses the logo's green, amber and red freely, as pale tiles and
+     filled marks. Consultations and the review queue keep the rule. */
+  --tint-green: #e3f1eb;
+  --tint-amber: #f7eedd;
+  --tint-red: #f8e9e6;
+  --on-t1: #ffffff;
+  /* Chart lines. The logo's hues, one step brighter than --t1 and --t2 because the logo's own
+     green fails a chart's chroma floor (dataviz validator). Their colour-blind separation is
+     7.8, legal only with a second cue, so the two blood pressure lines also differ in marker
+     and carry direct labels. */
+  --chart-1: #0b8a63;
+  --chart-2: #c27800;
 }
 
 .dark {
@@ -86,6 +100,13 @@
   --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.06), 0 24px 60px rgba(0, 0, 0, 0.6);
   --radius: 8px;
+
+  --tint-green: #1b2f28;
+  --tint-amber: #2f2719;
+  --tint-red: #2f201e;
+  --on-t1: #0f1714;
+  --chart-1: #22a982;
+  --chart-2: #bb8220;
 }
 
 @theme inline {
@@ -109,6 +130,13 @@
   --color-t1: var(--t1);
   --color-t2: var(--t2);
   --color-t3: var(--t3);
+
+  --color-tint-green: var(--tint-green);
+  --color-tint-amber: var(--tint-amber);
+  --color-tint-red: var(--tint-red);
+  --color-on-t1: var(--on-t1);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
 
   --font-sans: var(--font-satoshi);
   --font-mono: var(--font-iosevka);
@@ -553,5 +581,49 @@ body {
      likely to be relying on more than one. */
   .level-dot {
     animation: none;
+  }
+}
+
+/* The prescription sheet is paper in either theme, so its colours are its own: the sage, ochre
+   and clay of the printed design (../prescription_final/rx/sheets.py). The -ink steps are for
+   small text, where the design's own shades fall under 4.5:1 on white. */
+.rx-sheet {
+  --rx-sage: #3a9d8f;
+  --rx-sage-ink: #2b7f73;
+  --rx-ochre: #c08a2e;
+  --rx-ochre-ink: #8f6418;
+  --rx-clay: #c26b5a;
+  --rx-clay-ink: #a9503f;
+  --rx-ink: #1e293b;
+  --rx-text: #334155;
+  --rx-muted: #5b6b80;
+  --rx-rule: #e2e8f0;
+  background: #ffffff;
+  color: var(--rx-text);
+}
+.rx-sheet li::marker {
+  color: var(--marker, currentColor);
+}
+.rx-sheet ::selection {
+  background: var(--rx-ink);
+  color: #ffffff;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+  }
+  .rx-sheet,
+  .rx-sheet * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .no-print {
+    display: none !important;
   }
 }
