@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useRef, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowUp,
   Baby,
@@ -689,13 +689,66 @@ function ErrorIcon({ type }: { type?: Message["errorType"] }) {
   return <AlertTriangle className={cls} />;
 }
 
+/* What the empty consultation says, by mode, so arriving from `/drugs` or `/child` lands
+   on a page that is recognisably that mode. Wording only: the mode that is sent to the
+   backend is still decided by `handleSend`, and "drugs" still travels as a triage turn. */
+const EMPTY_STATE = {
+  triage: {
+    head: "What's going on?",
+    intro:
+      "Describe your symptoms in your own words. Whatever comes back is tagged with how far the system was allowed to act on its own — and you can always open the reasoning behind it.",
+    prompts: [
+      "What are the symptoms of strep throat?",
+      "I've had a sore throat and fever for three days",
+      "Can I take ibuprofen with my blood pressure medication?",
+    ],
+  },
+  drugs: {
+    head: "Which medicine?",
+    intro:
+      "Ask about interactions, doses, or what a label says. It is looked up live and read against what you take, and anything that names a dose is held for a doctor.",
+    prompts: [
+      "Can I take ibuprofen with my blood pressure medication?",
+      "What does amoxicillin interact with?",
+      "How long can I take cetirizine for?",
+    ],
+  },
+  child: {
+    head: "What's going on with your child?",
+    intro:
+      "Answers come from WHO and IMNCI guidance, with the page each claim came from. This mode does not triage: there is no level, and every answer ends with what to watch for.",
+    prompts: [
+      "My two-year-old has had loose stools since yesterday.",
+      "How do I know if my baby is feeding well?",
+      "My child has a cough and is breathing fast.",
+    ],
+  },
+} as const;
+
+/* The page reads `?mode=` and `?q=` once, on arrival, so the mode pages (`/drugs`,
+   `/child`) can open a consultation in their mode with the question already in the
+   composer. It only fills the box: nothing is sent until the person sends it, and the
+   mode still goes through `pickMode`'s rules once a conversation exists. Reading the
+   query string needs a Suspense boundary to prerender, hence the wrapper. */
 export default function ChatPage() {
+  return (
+    <Suspense>
+      <Chat />
+    </Suspense>
+  );
+}
+
+function Chat() {
+  const arrival = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => arrival.get("q") ?? "");
   const [isTyping, setIsTyping] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [conversationTitle, setConversationTitle] = useState<string>("Untitled Conversation");
-  const [mode, setMode] = useState<"triage" | "drugs" | "child">("triage");
+  const [mode, setMode] = useState<"triage" | "drugs" | "child">(() => {
+    const asked = arrival.get("mode");
+    return asked === "drugs" || asked === "child" ? asked : "triage";
+  });
   // The open conversation's mode, as the server stored it on its first turn; null before.
   // A conversation can't change mode, so picking the other one starts a new chat.
   const [conversationMode, setConversationMode] = useState<"triage" | "child" | null>(null);
@@ -1100,7 +1153,7 @@ export default function ChatPage() {
           </p>
         </div>
       ) : isLocked ? (
-        <div className="border border-t3 bg-t3/8">
+        <div className="rounded-[20px] border border-t3 bg-t3/8">
           <div className="flex items-start gap-3 p-4">
             <Lock className="w-4 h-4 text-t3 shrink-0 mt-0.5" />
             <div>
@@ -1115,7 +1168,7 @@ export default function ChatPage() {
           </div>
         </div>
       ) : (
-        <div className="border border-border bg-card focus-within:border-foreground transition-colors">
+        <div className="rounded-[24px] border border-border bg-card focus-within:border-foreground transition-colors">
           <textarea
             ref={textareaRef}
             value={input}
@@ -1128,18 +1181,18 @@ export default function ChatPage() {
                   ? "Ask about your child's health."
                   : "Describe your symptoms, or ask a clinical question."
             }
-            className="w-full bg-transparent px-4 pt-4 pb-2 text-[14px] leading-relaxed text-foreground placeholder:text-muted/70 focus:outline-none resize-none min-h-[76px]"
+            className="w-full bg-transparent px-5 pt-4 pb-2 text-[16px] leading-relaxed text-foreground placeholder:text-muted/70 focus:outline-none resize-none min-h-[76px]"
             disabled={isTyping}
             rows={3}
             aria-label="Message"
           />
 
-          <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-t border-border">
+          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5 pt-1">
             <div className="flex items-center gap-1 min-w-0">
               <button
                 onClick={() => pickMode("triage")}
                 aria-pressed={mode === "triage"}
-                className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] transition-colors ${
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full font-mono text-[12px] transition-colors ${
                   mode === "triage"
                     ? "bg-accent text-on-accent"
                     : "text-muted hover:text-foreground"
@@ -1151,7 +1204,7 @@ export default function ChatPage() {
               <button
                 onClick={() => pickMode("drugs")}
                 aria-pressed={mode === "drugs"}
-                className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] transition-colors ${
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full font-mono text-[12px] transition-colors ${
                   mode === "drugs"
                     ? "bg-accent text-on-accent"
                     : "text-muted hover:text-foreground"
@@ -1163,7 +1216,7 @@ export default function ChatPage() {
               <button
                 onClick={() => pickMode("child")}
                 aria-pressed={mode === "child"}
-                className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] transition-colors ${
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full font-mono text-[12px] transition-colors ${
                   mode === "child"
                     ? "bg-accent text-on-accent"
                     : "text-muted hover:text-foreground"
@@ -1192,7 +1245,7 @@ export default function ChatPage() {
                 {modelMenuOpen && (
                   <div
                     role="listbox"
-                    className="absolute bottom-full left-0 mb-2 w-60 border border-border bg-card shadow-lg z-50 rise"
+                    className="absolute bottom-full left-0 mb-2 w-60 rounded-2xl overflow-hidden border border-border bg-card shadow-lg z-50 rise"
                   >
                     <p className="label px-3 py-2 border-b border-border">
                       Model
@@ -1240,7 +1293,7 @@ export default function ChatPage() {
               onClick={() => handleSend()}
               disabled={!input.trim() || isTyping}
               aria-label="Send message"
-              className="shrink-0 w-8 h-8 grid place-items-center bg-accent text-on-accent disabled:opacity-20 disabled:cursor-not-allowed hover:opacity-85 transition-opacity"
+              className="shrink-0 w-9 h-9 rounded-full grid place-items-center bg-accent text-on-accent disabled:opacity-20 disabled:cursor-not-allowed hover:opacity-85 active:scale-95 transition"
             >
               <ArrowUp className="w-4 h-4" />
             </button>
@@ -1248,7 +1301,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      <p className="data text-[10px] text-muted mt-3 text-center">
+      <p className="data text-[11px] text-muted mt-3 text-center">
         Research system · not a substitute for professional medical advice
       </p>
     </div>
@@ -1257,7 +1310,7 @@ export default function ChatPage() {
   /* ── The chart band: who you are, where you are, what you can do ── */
 
   const chartBand = (
-    <div className="shrink-0 border-b border-border bg-background">
+    <div className="shrink-0 bg-background">
       {/* Aligned to the transcript column, not the viewport — the band is the
           chart's title block, so it must sit over the chart. */}
       <div className="max-w-[720px] mx-auto px-5 h-12 flex items-center gap-3">
@@ -1283,7 +1336,7 @@ export default function ChatPage() {
             className="h-7 px-2.5 data text-[11px] text-muted hover:text-foreground transition-colors inline-flex items-center gap-1.5"
           >
             Past consultations
-            <span className="data text-[10px] text-muted tabular-nums border border-border px-1">
+            <span className="data text-[11px] text-muted tabular-nums rounded-full bg-sunk px-2 py-0.5">
               {conversations.length}
             </span>
           </button>
@@ -1891,6 +1944,7 @@ export default function ChatPage() {
   /* ── Empty state ── */
 
   if (!hasMessages) {
+    const empty = EMPTY_STATE[mode];
     return (
       <div className="h-screen bg-background text-foreground flex flex-col">
         <Navbar />
@@ -1898,35 +1952,29 @@ export default function ChatPage() {
 
         <main className="flex-1 overflow-y-auto flex flex-col justify-center px-5">
           <div className="w-full max-w-[720px] mx-auto py-10 rise">
-            <h1 className="display text-[2rem] sm:text-[2.5rem] max-w-[18ch]">
-              What&apos;s going on?
+            <h1 className="display text-[2.6rem] sm:text-[3.6rem] max-w-[18ch]">
+              {empty.head}
             </h1>
-            <p className="mt-4 text-[15px] text-muted leading-relaxed max-w-[52ch]">
-              Describe your symptoms in your own words. Whatever comes back is
-              tagged with how far the system was allowed to act on its own — and
-              you can always open the reasoning behind it.
+            <p className="mt-5 text-[16px] text-muted leading-relaxed max-w-[52ch]">
+              {empty.intro}
             </p>
 
             <div className="mt-8 mb-8">
               <p className="label mb-3">Try</p>
-              <div className="flex flex-col gap-px bg-border border border-border">
-                {[
-                  "What are the symptoms of strep throat?",
-                  "I've had a sore throat and fever for three days",
-                  "Can I take ibuprofen with my blood pressure medication?",
-                ].map((prompt) => (
+              <div className="flex flex-col gap-1.5">
+                {empty.prompts.map((prompt) => (
                   <button
                     key={prompt}
                     onClick={() => {
                       setInput(prompt);
                       textareaRef.current?.focus();
                     }}
-                    className="group flex items-center justify-between gap-3 bg-background px-3.5 py-3 text-left hover:bg-card transition-colors"
+                    className="group flex items-center justify-between gap-3 rounded-2xl bg-sunk px-4 py-3 text-left hover:bg-accent transition-colors"
                   >
-                    <span className="text-[13px] text-muted group-hover:text-foreground transition-colors">
+                    <span className="text-[15px] text-foreground group-hover:text-on-accent transition-colors">
                       {prompt}
                     </span>
-                    <ArrowUp className="w-3.5 h-3.5 text-muted rotate-45 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <ArrowUp className="w-3.5 h-3.5 text-on-accent rotate-45 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </button>
                 ))}
               </div>
@@ -1977,7 +2025,7 @@ export default function ChatPage() {
         </div>
       </main>
 
-      <div className="shrink-0 border-t border-border px-5 py-4 bg-background">
+      <div className="shrink-0 px-5 pb-4 pt-2 bg-background">
         {followupState?.state === "active" && followupState.checkin_due && !isLocked && !isTyping && (
           <CheckInCard
             followup={followupState}

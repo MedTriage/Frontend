@@ -20,9 +20,12 @@ type Tone = "white" | "green" | "amber" | "red";
 
 const TONE: Record<Tone, string> = {
   white: "bg-card border border-border",
-  green: "bg-tint-green",
-  amber: "bg-tint-amber",
-  red: "bg-tint-red",
+  // The three tones used to be pale washes of the level colours. With the level colours
+  // now saturated, a red tile under "Blood pressure" would read as an alarm, and a stat
+  // carries no verdict; so every tile is a neutral field and the selected one is ink.
+  green: "bg-sunk",
+  amber: "bg-sunk",
+  red: "bg-sunk",
 };
 
 const KIND_LABEL: Record<ReadingKind, string> = {
@@ -151,12 +154,12 @@ function Tile({
   className?: string;
 }) {
   const on = Boolean(selected) && !form;
-  const surface = form ? TONE.white : on ? "bg-t1 text-on-t1" : TONE[tone];
+  const surface = form ? TONE.white : on ? "bg-accent text-on-accent" : TONE[tone];
   const body = (
     <>
       <span
         className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shrink-0 ${
-          on ? "bg-on-t1 text-t1" : tone === "white" ? "bg-background text-foreground" : "bg-card text-foreground"
+          on ? "bg-on-accent text-accent" : tone === "white" ? "bg-background text-foreground" : "bg-card text-foreground"
         }`}
       >
         <Icon className="w-[17px] h-[17px]" strokeWidth={1.75} />

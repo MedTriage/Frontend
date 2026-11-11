@@ -55,7 +55,7 @@ export const PHASES: Phase[] = [
   },
   {
     head: "Three sources, at once",
-    body: "Clinical guidelines, a map of related conditions, and live lookups in drug labelling and the literature. They are queried in parallel rather than in turn, which is why the wait is the slowest of the three and not the sum of them.",
+    body: "What the model recalls on its own, a map of related conditions, and live lookups in drug labelling and the literature. They are queried in parallel rather than in turn, which is why the wait is the slowest of the three and not the sum of them.",
     still: "signal-2.jpg",
   },
   {

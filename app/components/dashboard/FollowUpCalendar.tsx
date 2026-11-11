@@ -115,7 +115,7 @@ export function FollowUpCalendar({
                     isToday
                       ? "bg-t1 text-on-t1 font-semibold"
                       : picked === key
-                        ? "bg-tint-green text-foreground font-medium"
+                        ? "bg-tint-green on-field text-foreground font-medium"
                         : inMonth
                           ? "text-foreground"
                           : "text-muted"

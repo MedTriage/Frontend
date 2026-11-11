@@ -1,37 +1,26 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
+import { Newsreader, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "./components/ThemeProvider";
 import "./globals.css";
 
-// Satoshi runs the whole page — headline and body both. A single grotesque with a
-// tall x-height and open apertures holds a 96px display line and a 15px paragraph
-// without either looking like a different brand, which is why the sites this is
-// modelled on ship one family rather than a display/body pair.
+// One serif and one mono for the whole product, the public site and the app alike.
+// Newsreader carries an optical size axis, so one family holds a 90px headline and a
+// 15px table cell. Geist Mono is the instrument voice: levels, readouts, labels, the
+// demo. Both are OFL, which matters because this repository is public.
 //
-// Self-hosted rather than pulled from Fontshare's CDN: one variable file covering
-// 300-900, no render-blocking request to a third party, and dev works offline.
-const satoshi = localFont({
-  src: "../public/fonts/Satoshi-Variable.woff2",
-  variable: "--font-satoshi",
-  weight: "300 900",
+// The app's stylesheet still speaks of `--font-satoshi` and `--font-iosevka`; those
+// names are aliased to these two in `globals.css` rather than renamed everywhere.
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  axes: ["opsz"],
+  variable: "--font-newsreader",
   display: "swap",
 });
 
-// Iosevka carries every clinical number: levels, confidences, timestamps, ids. It
-// should read like a lab printout, because that is what it is — and Iosevka is the
-// narrowest credible mono, half an em per character against Plex Mono's 0.6, which
-// is what lets a dense card hold a whole log line without shrinking the type.
-//
-// Subset before shipping. Fontsource's "latin" cut is 984KB PER WEIGHT because
-// Iosevka's Latin block carries thousands of glyphs this interface will never
-// render; cut to the characters actually used it is ~15KB.
-const iosevka = localFont({
-  src: [
-    { path: "../public/fonts/Iosevka-400.woff2", weight: "400", style: "normal" },
-    { path: "../public/fonts/Iosevka-500.woff2", weight: "500", style: "normal" },
-    { path: "../public/fonts/Iosevka-600.woff2", weight: "600", style: "normal" },
-  ],
-  variable: "--font-iosevka",
+const mono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-site-mono",
   display: "swap",
 });
 
@@ -55,7 +44,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${satoshi.variable} ${iosevka.variable} antialiased`}>
+      <body className={`${newsreader.variable} ${mono.variable} antialiased`}>
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

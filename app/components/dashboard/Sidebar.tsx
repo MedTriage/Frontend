@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LayoutGrid, LogOut, MessageSquareText, Plus, UserRound } from "lucide-react";
-import { Mark } from "../Navbar";
 import { ThemeToggle } from "../ThemeToggle";
 import { postJson, type Account } from "@/lib/account";
 
@@ -25,13 +24,8 @@ export function Sidebar({ account }: { account: Account | null }) {
   };
 
   return (
-    <aside className="hidden min-[1180px]:flex sticky top-0 h-screen flex-col border-r border-border px-4 py-6">
-      <Link href="/" className="flex items-center gap-2.5 px-2.5" aria-label="MedTriage overview">
-        <Mark />
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">MedTriage</span>
-      </Link>
-
-      <nav aria-label="Dashboard" className="mt-9 space-y-1">
+    <aside className="hidden min-[1180px]:flex sticky top-[72px] h-[calc(100vh-72px)] flex-col px-4 pt-3 pb-6">
+      <nav aria-label="Dashboard" className="space-y-1">
         {LINKS.map(({ href, label, icon: Icon, active }) => (
           <Link
             key={href}

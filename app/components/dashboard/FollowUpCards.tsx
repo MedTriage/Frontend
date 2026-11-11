@@ -31,7 +31,7 @@ export function FollowUpCards({ episodes }: { episodes: FollowUpEpisode[] | null
           >
             <span
               className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${
-                waiting ? "bg-tint-red text-t3" : active ? "bg-tint-green text-t1" : "bg-background text-muted"
+                waiting ? "bg-tint-red on-field" : active ? "bg-tint-green on-field" : "bg-background text-muted"
               }`}
             >
               {active ? <CalendarClock className="w-[18px] h-[18px]" strokeWidth={1.75} /> : <HeartHandshake className="w-[18px] h-[18px]" strokeWidth={1.75} />}

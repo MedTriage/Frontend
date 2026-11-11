@@ -63,17 +63,16 @@ export default function DashboardPage() {
   const lead = followups.data ? finding(followups.data) : null;
 
   return (
-    <div className="min-h-screen bg-background text-foreground min-[1180px]:grid min-[1180px]:grid-cols-[232px_minmax(0,1fr)]">
+    <div className="min-h-screen bg-background text-foreground">
+      <Navbar />
+      <div className="min-[1180px]:grid min-[1180px]:grid-cols-[232px_minmax(0,1fr)]">
       <Sidebar account={account} />
-      <div className="min-[1180px]:hidden">
-        <Navbar />
-      </div>
 
       {/* Single column up to 1180px, in the owner's order: calendar, prescriptions, stats. */}
       <main className="min-w-0 px-4 sm:px-6 min-[1180px]:px-7 py-6 grid grid-cols-[minmax(0,1fr)] gap-5 min-[1180px]:grid-cols-[minmax(0,1fr)_340px] min-[1180px]:grid-rows-[auto_1fr] items-start">
         <header className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3 min-[1180px]:col-start-1">
           <div className="min-w-0">
-            <h1 className="text-[26px] font-medium tracking-[-0.02em] leading-tight">Dashboard</h1>
+            <h1 className="display text-[2.6rem]">Dashboard</h1>
             <p className="text-[15px] text-muted mt-1 min-h-[22px]">{lead?.text ?? ""}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -111,7 +110,7 @@ export default function DashboardPage() {
           <HealthChart readings={readings.data} kind={kind} onKind={setKind} today={today} />
           <div>
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 mb-2.5 px-0.5">
-              <h2 className="text-[17px] font-medium tracking-[-0.01em]">Health stats</h2>
+              <h2 className="display-sm text-[1.35rem]">Health stats</h2>
               <p className="text-[12px] text-muted">
                 The latest of each goes into your consultations, for the agents and the doctor reviewing them.
               </p>
@@ -129,6 +128,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+      </div>
     </div>
   );
 }

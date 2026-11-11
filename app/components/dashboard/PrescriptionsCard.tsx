@@ -69,7 +69,7 @@ export function PrescriptionsCard({
                   href={`/prescriptions/${rx.id}`}
                   className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5 hover:border-foreground/30 transition-colors"
                 >
-                  <span className="w-10 h-10 rounded-full bg-tint-green text-t1 flex items-center justify-center shrink-0">
+                  <span className="w-10 h-10 rounded-full bg-tint-green on-field flex items-center justify-center shrink-0">
                     <Pill className="w-[18px] h-[18px]" strokeWidth={1.75} />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -81,7 +81,7 @@ export function PrescriptionsCard({
                       {first ? first.frequency : ""}
                     </span>
                     {draft ? (
-                      <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-tint-amber text-t2 text-[11px] font-medium">
+                      <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-tint-amber on-field text-[11px] font-medium">
                         Test draft, not reviewed by a doctor
                       </span>
                     ) : (

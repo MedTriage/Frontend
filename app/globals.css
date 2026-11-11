@@ -1,35 +1,37 @@
 @import "tailwindcss";
 
 /*
-  MedTriage — "Chart"
+  MedTriage, the app pages: "Chart", re-inked.
 
-  One rule governs this palette: colour is clinical data, never decoration.
-  The interface is achromatic — paper, ink, graphite, hairline rules. The only
-  chroma in the entire product is the triage scale (t1/t2/t3), so if a user sees
-  colour, it means risk. That is why buttons and links are ink, not green.
+  One rule governs this palette: colour is clinical data, never decoration. The
+  interface is achromatic (bone, ink, hairlines); the only chroma is the triage scale
+  (t1/t2/t3), so if a user sees colour, it means risk. Buttons and links are ink.
+
+  Since 2026-11-11 the neutrals and the level hues are the public site's (`site.css`):
+  bone #ece9e2, ink #0b0d0c, and green, marigold and vermilion. On bone the three are
+  darkened until they hold 4.5:1 as text; on ink they are the site's own values.
 */
 
 :root,
 .light {
-  --background: #f4f6f5; /* chart stock — cool, not cream */
-  --card: #ffffff; /* the field you write in */
-  --foreground: #14181b; /* ink */
-  --muted: #5c6672; /* pencil */
-  --border: #dce0df; /* hairline rule */
-  --footer-bg: #eceeed;
-  /* A recessed ground. No hue — depth in this palette is value, never colour, so a
-     panel can sit back from the page without spending the triage scale. */
-  --sunk: #eceeed;
+  --background: #ece9e2; /* bone */
+  --card: #f6f4ef; /* the field you write in, one step lighter */
+  --foreground: #0b0d0c; /* ink */
+  --muted: #5a605b;
+  --border: #d2cdc2;
+  --footer-bg: #dfdbd1;
+  /* A recessed ground. No hue: depth here is value, never colour. */
+  --sunk: #dfdbd1;
 
-  /* Accent is ink, not a hue. Buttons are stamped, not lit. */
-  --accent: #14181b;
-  --accent-muted: #e3e7e6;
-  --on-accent: #f4f6f5;
+  /* Accent is ink, not a hue. */
+  --accent: #0b0d0c;
+  --accent-muted: #dfdbd1;
+  --on-accent: #ece9e2;
 
-  /* The triage scale — the only colour in the system. */
-  --t1: #17795a; /* direct to patient */
-  --t2: #a96a00; /* physician-verified */
-  --t3: #c0362c; /* emergency — AI locked */
+  /* The triage scale, as text and marks on bone. */
+  --t1: #0b7d4d; /* direct to patient */
+  --t2: #9a6200; /* physician-verified */
+  --t3: #c42e10; /* emergency, AI locked */
 
   --danger: var(--t3);
   --warning: var(--t2);
@@ -52,14 +54,16 @@
      Neutral and low-opacity so depth stays a matter of value, never of hue. */
   --shadow-1: 0 1px 2px rgba(20, 24, 27, 0.04), 0 6px 16px rgba(20, 24, 27, 0.05);
   --shadow-2: 0 2px 4px rgba(20, 24, 27, 0.05), 0 18px 44px rgba(20, 24, 27, 0.09);
-  --radius: 8px;
+  --radius: 14px;
 
   /* The patient dashboard, and the one place "colour means risk" does not hold: by the owner's
      decision of 2026-11-09 it uses the logo's green, amber and red freely, as pale tiles and
      filled marks. Consultations and the review queue keep the rule. */
-  --tint-green: #e3f1eb;
-  --tint-amber: #f7eedd;
-  --tint-red: #f8e9e6;
+  /* Whole fields in the level colours, never pale washes. Anything set on one takes
+     `.on-field` too, which turns its text to ink in either theme. */
+  --tint-green: #22c77e;
+  --tint-amber: #ffb01f;
+  --tint-red: #ff4b2b;
   --on-t1: #ffffff;
   /* Chart lines. The logo's hues, one step brighter than --t1 and --t2 because the logo's own
      green fails a chart's chroma floor (dataviz validator). Their colour-blind separation is
@@ -70,22 +74,22 @@
 }
 
 .dark {
-  --background: #14181b;
-  --card: #1a1f23;
-  --foreground: #e8ecea;
-  --muted: #868f99;
-  --border: #272d33;
-  --footer-bg: #111417;
-  --sunk: #111417;
+  --background: #0b0d0c;
+  --card: #131715;
+  --foreground: #ece9e2;
+  --muted: #8f968f;
+  --border: #272d2a;
+  --footer-bg: #070908;
+  --sunk: #070908;
 
-  --accent: #e8ecea;
-  --accent-muted: #272d33;
-  --on-accent: #14181b;
+  --accent: #ece9e2;
+  --accent-muted: #272d2a;
+  --on-accent: #0b0d0c;
 
-  /* Lifted for contrast on dark stock; same clinical meaning. */
-  --t1: #46c39b;
-  --t2: #dfa33a;
-  --t3: #f26558;
+  /* On ink the level colours are the public site's own. */
+  --t1: #22c77e;
+  --t2: #ffb01f;
+  --t3: #ff4b2b;
 
   --danger: var(--t3);
   --warning: var(--t2);
@@ -99,12 +103,12 @@
      surface and a rim instead — the same signal, delivered the way dark UI can. */
   --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.06), 0 24px 60px rgba(0, 0, 0, 0.6);
-  --radius: 8px;
+  --radius: 14px;
 
-  --tint-green: #1b2f28;
-  --tint-amber: #2f2719;
-  --tint-red: #2f201e;
-  --on-t1: #0f1714;
+  --tint-green: #22c77e;
+  --tint-amber: #ffb01f;
+  --tint-red: #ff4b2b;
+  --on-t1: #0b0d0c;
   --chart-1: #22a982;
   --chart-2: #bb8220;
 }
@@ -143,10 +147,29 @@
 }
 
 body {
+  /* The stylesheet's older names, pointed at the two faces the product now uses. */
+  --font-satoshi: var(--font-newsreader);
+  --font-iosevka: var(--font-site-mono);
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-satoshi), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-newsreader), "Iowan Old Style", Georgia, serif;
+  /* The app's sizes were chosen for a grotesque with a tall x-height. A serif at the
+     same pixel size reads a step smaller, so the x-height is matched instead of
+     re-sizing every component. The public site sets its own sizes and opts out. */
+  font-size-adjust: 0.49;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Content set on a level-coloured field: ink, in either theme. */
+.on-field {
+  --foreground: #0b0d0c;
+  --muted: #1d2a23;
+  --border: rgba(11, 13, 12, 0.22);
+  --card: rgba(255, 255, 255, 0.4);
+  --t1: #0b0d0c;
+  --t2: #0b0d0c;
+  --t3: #0b0d0c;
+  color: #0b0d0c;
 }
 
 /* Display type is one notch above body weight and tracked in hard. Satoshi at 500
@@ -154,8 +177,8 @@ body {
    doing the work, so the weight does not have to. Negative tracking is what makes a
    large line read as designed rather than merely big. */
 .display {
-  font-weight: 500;
-  letter-spacing: -0.032em;
+  font-weight: 380;
+  letter-spacing: -0.03em;
   line-height: 1;
   text-wrap: balance;
 }
@@ -163,17 +186,17 @@ body {
 /* Sub-heads: the same voice at conversational volume. Tracking relaxes as the size
    drops, because tight tracking that flatters a headline closes up a small line. */
 .display-sm {
-  font-weight: 500;
-  letter-spacing: -0.015em;
+  font-weight: 450;
+  letter-spacing: -0.018em;
   line-height: 1.12;
 }
 
 .label {
   font-family: var(--font-iosevka), ui-monospace, monospace;
-  font-size: 10px;
-  line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
+  font-size: 12px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-size-adjust: none;
   color: var(--muted);
 }
 
@@ -182,6 +205,7 @@ body {
 .data {
   font-family: var(--font-iosevka), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
+  font-size-adjust: none;
 }
 
 ::selection {

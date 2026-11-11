@@ -2,9 +2,8 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Eye, EyeOff, Check } from "lucide-react";
-import { Navbar } from "../components/Navbar";
-import { FormError, Notice } from "../components/AuthForm";
+import { Check } from "lucide-react";
+import { AuthPage, Field, FormError, Notice, PasswordField, SubmitButton, TEXT_LINK } from "../components/AuthForm";
 import { errorMessage, postJson } from "@/lib/account";
 
 interface Requirement {
@@ -34,8 +33,6 @@ function strengthLabel(passed: number): string {
 }
 
 export default function SignupPage() {
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,235 +76,151 @@ export default function SignupPage() {
 
   if (sentTo) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col">
-        <Navbar />
-        <main className="flex-1 flex items-center justify-center px-5 py-16">
-          <div className="w-full max-w-[380px] rise">
-            <p className="label mb-4">Create an account</p>
-            <h1 className="display text-[1.9rem] mb-2">Check your email.</h1>
-            <p className="text-[15px] text-muted leading-relaxed mb-8">
-              We sent a link to <span className="text-foreground">{sentTo}</span>. Open it to
-              confirm the address, then log in. The link expires in 24 hours.
-            </p>
-            {resent ? (
-              <Notice>Sent again. Give it a minute, and check your spam folder.</Notice>
-            ) : (
-              <button
-                type="button"
-                onClick={resend}
-                className="text-[14px] text-muted hover:text-foreground underline underline-offset-4 transition-colors"
-              >
-                Didn&apos;t get it? Send it again
-              </button>
-            )}
-            <p className="text-[14px] text-muted mt-8 pt-6 border-t border-border">
-              Confirmed already?{" "}
-              <Link href="/login" className="text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity">
-                Log in
-              </Link>
-            </p>
-          </div>
-        </main>
-      </div>
+      <AuthPage
+        label="Create an account"
+        heading="Check your email."
+        progress={1}
+        intro={
+          <>
+            We sent a link to <span className="text-foreground">{sentTo}</span>. Open it to confirm
+            the address, then log in. The link expires in 24 hours.
+          </>
+        }
+      >
+        {resent ? (
+          <Notice>Sent again. Give it a minute, and check your spam folder.</Notice>
+        ) : (
+          <button
+            type="button"
+            onClick={resend}
+            className="text-[15px] text-muted hover:text-foreground underline underline-offset-4 transition-colors"
+          >
+            Didn&apos;t get it? Send it again
+          </button>
+        )}
+        <p className="text-[15px] text-muted mt-9">
+          Confirmed already?{" "}
+          <Link href="/login" className={TEXT_LINK}>
+            Log in
+          </Link>
+        </p>
+      </AuthPage>
     );
   }
 
+  // Five things to complete; the moon on the left waxes by a fifth for each.
+  const done = [name.trim(), email.trim(), password.length >= 10, password && confirmPassword === password, consent].filter(Boolean).length;
+
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <Navbar />
+    <AuthPage
+      label="Create an account"
+      heading="Start a record."
+      intro="Your consultations are kept together, so what you tell us today is still known the next time you ask."
+      progress={done / 5}
+    >
+      <form onSubmit={submit} className="space-y-5">
+        <Field
+          id="name"
+          label="Name"
+          type="text"
+          required
+          autoComplete="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Jane Doe"
+        />
+        <Field
+          id="email"
+          label="Email"
+          type="email"
+          required
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+        />
 
-      <main className="flex-1 flex items-center justify-center px-5 py-16">
-        <div className="w-full max-w-[380px] rise">
-          <p className="label mb-4">Create an account</p>
-          <h1 className="display text-[1.9rem] mb-2">Start a record.</h1>
-          <p className="text-[15px] text-muted leading-relaxed mb-9">
-            Your consultations are kept together, so what you tell us today is
-            still known the next time you ask.
-          </p>
-
-          <form onSubmit={submit} className="space-y-5">
-            <div>
-              <label htmlFor="name" className="label block mb-2">
-                Name
-              </label>
-              <input
-                id="name"
-                type="text"
-                required
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Jane Doe"
-                className="w-full h-11 px-3.5 bg-card border border-border text-[14px] placeholder:text-muted/70 focus:outline-none focus:border-foreground transition-colors"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="label block mb-2">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full h-11 px-3.5 bg-card border border-border text-[14px] placeholder:text-muted/70 focus:outline-none focus:border-foreground transition-colors"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="label block mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full h-11 pl-3.5 pr-11 bg-card border border-border text-[14px] placeholder:text-muted/70 focus:outline-none focus:border-foreground transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute right-0 top-0 h-11 w-11 grid place-items-center text-muted hover:text-foreground transition-colors"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
+        <div>
+          <PasswordField
+            id="password"
+            label="Password"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+          />
+          {password && (
+            <div className="mt-3 rounded-[14px] bg-card px-4 py-3.5">
+              <div className="flex items-baseline justify-between mb-2.5">
+                <span className="label">Strength</span>
+                <span className="data text-[12px]">{strengthLabel(passed)}</span>
               </div>
-
-              {password && (
-                <div className="mt-3">
-                  <div className="flex items-baseline justify-between mb-2">
-                    <span className="label">Strength</span>
-                    <span className="data text-[11px]">
-                      {strengthLabel(passed)}
-                    </span>
-                  </div>
-                  <div className="relative h-[3px] bg-border">
-                    <div
-                      className="absolute inset-y-0 left-0 bg-foreground transition-[width] duration-200"
-                      style={{
-                        width: `${(passed / REQUIREMENTS.length) * 100}%`,
-                      }}
-                    />
-                  </div>
-
-                  <ul className="mt-3 space-y-1">
-                    {REQUIREMENTS.map((r) => {
-                      const ok = r.test(password);
-                      return (
-                        <li
-                          key={r.label}
-                          className={`flex items-center gap-2 text-[12px] ${
-                            ok ? "text-foreground" : "text-muted"
-                          }`}
-                        >
-                          <Check
-                            className={`w-3 h-3 shrink-0 ${ok ? "opacity-100" : "opacity-25"}`}
-                          />
-                          {r.label}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="confirm" className="label block mb-2">
-                Confirm password
-              </label>
-              <div className="relative">
-                <input
-                  id="confirm"
-                  type={showConfirm ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  aria-invalid={mismatch}
-                  // Not red. A password mismatch is not a clinical risk, and the
-                  // triage palette is not available for spending on form validation.
-                  // The message below states the problem; it needs no colour to do so.
-                  className={`w-full h-11 pl-3.5 pr-11 bg-card border text-[14px] placeholder:text-muted/70 focus:outline-none transition-colors ${
-                    mismatch
-                      ? "border-foreground"
-                      : "border-border focus:border-foreground"
-                  }`}
+              <div className="relative h-[5px] rounded-full bg-border overflow-hidden">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-foreground transition-[width] duration-300"
+                  style={{ width: `${(passed / REQUIREMENTS.length) * 100}%` }}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirm(!showConfirm)}
-                  aria-label={showConfirm ? "Hide password" : "Show password"}
-                  className="absolute right-0 top-0 h-11 w-11 grid place-items-center text-muted hover:text-foreground transition-colors"
-                >
-                  {showConfirm ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
               </div>
-              {mismatch && (
-                <p className="text-[12px] text-foreground font-medium mt-2">
-                  These two don&apos;t match.
-                </p>
-              )}
+              <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1">
+                {REQUIREMENTS.map((r) => {
+                  const ok = r.test(password);
+                  return (
+                    <li
+                      key={r.label}
+                      className={`flex items-center gap-2 text-[13px] ${ok ? "text-foreground" : "text-muted"}`}
+                    >
+                      <Check className={`w-3 h-3 shrink-0 ${ok ? "opacity-100" : "opacity-25"}`} />
+                      {r.label}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-
-            <label className="flex items-start gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
-                className="w-3.5 h-3.5 mt-[3px] shrink-0 accent-[var(--foreground)]"
-              />
-              <span className="text-[13px] text-muted leading-relaxed">
-                I understand MedTriage is a research demo, not medical advice. My messages are
-                stored and sent to an AI model provider (OpenRouter) to produce answers, and a
-                doctor reviewing one of my questions will see my profile.
-              </span>
-            </label>
-
-            {error && <FormError>{error}</FormError>}
-
-            <button
-              type="submit"
-              disabled={!ready || busy}
-              className="w-full h-11 bg-accent text-on-accent text-sm font-medium hover:opacity-85 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {busy ? "Creating account…" : "Create account"}
-            </button>
-          </form>
-
-          <p className="text-[13px] text-muted mt-5 leading-relaxed">
-            MedTriage is a research system. It is not a diagnosis, and not a
-            substitute for seeing a doctor.
-          </p>
-
-          <p className="text-[14px] text-muted mt-6 pt-6 border-t border-border">
-            Already have an account?{" "}
-            <Link
-              href="/login"
-              className="text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity"
-            >
-              Log in
-            </Link>
-          </p>
+          )}
         </div>
-      </main>
-    </div>
+
+        <div>
+          {/* The mismatch is not red. It is not a clinical risk, and the triage palette is
+              not available for spending on form validation; the sentence states it. */}
+          <PasswordField
+            id="confirm"
+            label="Confirm password"
+            value={confirmPassword}
+            onChange={setConfirmPassword}
+            autoComplete="new-password"
+            invalid={mismatch}
+          />
+          {mismatch && (
+            <p className="text-[13px] text-foreground font-medium mt-2">These two don&apos;t match.</p>
+          )}
+        </div>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+            className="w-4 h-4 mt-[3px] shrink-0 accent-[var(--foreground)]"
+          />
+          <span className="text-[14px] text-muted leading-relaxed">
+            I understand MedTriage is a research demo, not medical advice. My messages are
+            stored and sent to an AI model provider (OpenRouter) to produce answers, and a
+            doctor reviewing one of my questions will see my profile.
+          </span>
+        </label>
+
+        {error && <FormError>{error}</FormError>}
+
+        <SubmitButton busy={busy} disabled={!ready}>
+          Create account
+        </SubmitButton>
+      </form>
+
+      <p className="text-[15px] text-muted mt-9">
+        Already have an account?{" "}
+        <Link href="/login" className={TEXT_LINK}>
+          Log in
+        </Link>
+      </p>
+    </AuthPage>
   );
 }

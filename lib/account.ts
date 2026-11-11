@@ -49,6 +49,21 @@ export function useAccount(required?: Role): Account | null {
 
   useEffect(() => {
     let cancelled = false;
+
+    // A visitor who has already clicked a link to another page has chosen where to go.
+    // Without this, a slow answer from /api/me could land while that navigation was
+    // still in flight (this page not yet unmounted, so `cancelled` still false) and
+    // queue a redirect to the login page behind it: you arrived at the page you asked
+    // for and were then pulled away to log in. Modified clicks and new-tab links do not
+    // leave this page, so they do not count.
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.origin !== window.location.origin) return;
+      if (a.pathname !== window.location.pathname) cancelled = true;
+    };
+    document.addEventListener("click", onClick);
+
     fetch("/api/me", { cache: "no-store" })
       .then(async (res) => {
         if (cancelled) return;
@@ -70,6 +85,7 @@ export function useAccount(required?: Role): Account | null {
       });
     return () => {
       cancelled = true;
+      document.removeEventListener("click", onClick);
     };
   }, [required, router]);
 
