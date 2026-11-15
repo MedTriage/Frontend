@@ -9,8 +9,8 @@ import { Arrow, EASE, LEVEL_COLOR, Lines, Rise } from "./ui";
 /* ════ Sources ════
  *
  * Every knowledge source, from `app/lib/sources.ts`. On the About page it is the whole
- * list with a filter by mode; a mode page passes `only` and gets just its own rows with
- * no filter. Rows are plain facts, so the one flourish is the hover, which turns a row
+ * list with a filter by mode; a mode page (`/triage`, `/drugs`, `/child`) passes `only`
+ * and gets just its own rows with no filter. Rows are plain facts, so the one flourish is the hover, which turns a row
  * into the field's opposite.
  */
 export function Sources({
@@ -34,7 +34,7 @@ export function Sources({
     <section
       className={`sec wrap f-${field}`}
       data-field={field === "ink" ? "dark" : "light"}
-      id={only ? undefined : "sources"}
+      id="sources"
     >
       <div className="sec-head">
         <Lines lines={lines} />
@@ -93,7 +93,8 @@ export function Sources({
 
 /* ════ Follow-up ════
  *
- * The feature, and a working model of it. The card on the right is the check-in a
+ * On triage's page, since an episode is opened by a triage answer. The feature, and a
+ * working model of it. The card on the right is the check-in a
  * patient gets: pick an illness, answer the check-in, and see what the system does
  * next. Schedules and outcomes come from `app/lib/followup.ts`, which mirrors the
  * backend's published-guidance table and its fixed outcome rules, so what the card

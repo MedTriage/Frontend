@@ -9,7 +9,8 @@ import { useStillness } from "../../lib/useStillness";
 import { Moon, phaseOf } from "./Moon";
 import { Arrow, EASE, LEVEL_HEX, Lines, LogoMark, Rise } from "./ui";
 
-/* The two mode pages, `/drugs` and `/child`. Each is that mode's front door: what it
+/* Shared by the mode pages: `/drugs` and `/child` are built from this file, and
+   `/triage` (`Triage.tsx`) borrows its ask field. Each is that mode's front door: what it
    is, a field to ask from, how an answer is made, what it will not do, and what it
    reads. Asking hands off to the consultation itself (`/chat?mode=…&q=…`), which is
    where a question is actually sent; nothing on these pages talks to the pipeline. */
@@ -24,7 +25,7 @@ export function AskField({
   placeholder,
   examples,
 }: {
-  mode: "drugs" | "child";
+  mode: "triage" | "drugs" | "child";
   placeholder: string;
   examples: string[];
 }) {
@@ -341,7 +342,7 @@ export function Nots({
   lede,
   items,
 }: {
-  field: "ink" | "bone";
+  field: "ink" | "bone" | "bone2";
   lines: string[];
   lede: string;
   items: { title: string; body: string }[];

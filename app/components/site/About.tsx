@@ -1,167 +1,100 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  AnimatePresence,
-  motion,
-  useInView,
-  useScroll,
-  useTransform,
-} from "motion/react";
+import { useRef, useState } from "react";
+import Link from "next/link";
+import { AnimatePresence, motion, useMotionValue, useScroll, useTransform } from "motion/react";
 import { COLOPHON } from "../../lib/colophon";
 import { LEVELS } from "../../lib/levels";
 import { LIMITS } from "../../lib/limits";
-import { RULES } from "../../lib/rules";
-import { PHASES } from "../../lib/seconds";
-import { SOURCES } from "../../lib/sources";
-import { useStillness } from "../../lib/useStillness";
-import { Moon } from "./Moon";
-import { Signal } from "./Signal";
-import { Arrow, EASE, LEVEL_COLOR, Lines, Rise, Roll, ScrubWords } from "./ui";
+import { ORIGINS } from "../../lib/origins";
+import { SOURCES, type SourceUse } from "../../lib/sources";
+import { Nots } from "./Modes";
+import { Moon, phaseOf } from "./Moon";
+import { MODES } from "./SiteShell";
+import { Arrow, EASE, LEVEL_HEX, Lines, Rise, Roll, ScrubWords } from "./ui";
 
-/* ── What the system is made of, named as a patient meets them. ── */
-const PARTS = [
-  {
-    name: "The record",
-    does: "Keeps a running note of what you have said you have, what you take, and what you are allergic to, so a later message is read in the light of the earlier ones and a recommendation can be checked against your allergies.",
-  },
-  {
-    name: "The router",
-    does: "Decides one thing only: is this clinical or is this conversation. It deliberately does not judge severity, because severity is decided later by something that has read the evidence.",
-  },
-  {
-    name: "Three sources, at once",
-    does: "What the model recalls on its own, a map of related conditions, and live lookups in drug labelling and the literature. They are consulted in parallel and they frequently disagree.",
-  },
-  {
-    name: "The reconciler",
-    does: "Reads all three, resolves disagreement on the evidence rather than by majority, checks every claim against the source it came from, and flags emergencies. If one source came back thin, it sends that one, and only that one, back to look again.",
-  },
-  {
-    name: "The guardian",
-    does: "Applies the eight rules. It is the only component permitted to set your triage level, and it is the last thing that runs.",
-  },
-];
-
-/* ── How it fails. Every one of these is a real, exercised code path. ── */
-const FAILURES = [
-  {
-    when: "A source can't be reached",
-    then: "It is dropped as unusable rather than counted as silence. The remaining sources carry the answer, and the consultation tells you which one was missing.",
-  },
-  {
-    when: "The safety review itself fails",
-    then: "The case escalates to a physician. A broken reviewer never results in an unreviewed answer reaching you.",
-  },
-  {
-    when: "The guardian fails",
-    then: "The case defaults to physician review. There is no failure mode in which a fault produces a Level 1 answer.",
-  },
-  {
-    when: "The model returns nothing usable",
-    then: "You are told so. Raw, un-audited retrieval is never shown to a patient. Not as a fallback, not ever.",
-  },
-];
+/* The About page, `/about`: the general account. What the product is, the three ways to
+   ask it something, what it reads and where that is published (`Atlas.tsx`), what it
+   keeps, what it cannot do and what it is made of. How triage itself works (the rules,
+   the parts, the wait, the failures) is on triage's own page, `Triage.tsx`; this page
+   only says things that hold in every mode. */
 
 /* ════ Hero ════
  *
- * The headline claims the rules outrank the model, and the docket beside it is one case
- * doing exactly that: the model asks to answer directly, two rules fire on what it
- * wrote, the level it wanted is struck out and raised. The strike is the product in one
- * gesture, so it is the only thing here that is timed.
+ * The home page shows one moon changing. This shows the whole scale at once: the three
+ * phases on one orbit, read left to right as the risk rises, each posed from its level's
+ * `ai` share like every other moon on the site. They are still, and correct from the
+ * first paint; only their arrival is animated.
+ *
+ * The orbit is a circle far larger than the section, so what crosses it is a shallow
+ * arc. It is drawn in a 1200 x 420 box that stretches with the section, and SKY gives
+ * the same three points on it as percentages of that box, so the moons stay on the line
+ * at any width. (Circle centre 600, 1420; radius 1260.)
  */
-const FIRED = [
-  RULES.find((r) => r.when === "The answer asks for a test, lab or scan")!,
-  RULES.find((r) => r.when === "The answer names a drug or a dose")!,
+const SKY = [
+  { x: 18, y: 52.37 },
+  { x: 50, y: 38.1 },
+  { x: 82, y: 52.37 },
 ];
 
-function Docket() {
-  // The sequence is the point of the docket, so it is staged over three seconds. A
-  // reader who asked for reduced motion gets it all at once instead: the same content,
-  // without the wait.
-  const still = useStillness();
-  const t = (s: number) => (still ? 0 : s);
-  const at = (s: number) => ({
-    initial: { opacity: 0, y: 12 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.6, ease: EASE, delay: t(s) },
-  });
-  const held = LEVELS[1];
-
+function Body({ n }: { n: number }) {
+  const l = LEVELS[n];
+  const phase = useMotionValue(phaseOf(l.ai));
   return (
-    <motion.figure
-      className="docket"
-      initial={{ opacity: 0, y: 40 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 1.1, ease: EASE, delay: t(0.35) }}
+    <motion.li
+      className="abt-body"
+      style={{ left: `${SKY[n].x}%`, top: `${SKY[n].y}%` }}
+      initial={{ opacity: 0, y: 46, scale: 0.84 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 1.5, ease: EASE, delay: 0.3 + n * 0.18 }}
     >
-      <motion.p className="docket-q" {...at(0.7)}>
-        “I&apos;ve had a sore throat and a fever for three days.”
-      </motion.p>
-
-      <motion.div {...at(1.1)}>
-        <p className="term-k">The model proposed</p>
-        <span className="term-prop">
-          Level 1, {LEVELS[0].name.toLowerCase()}
-          <motion.i
-            initial={{ scaleX: 0 }}
-            animate={{ scaleX: 1 }}
-            transition={{ duration: 0.5, ease: [0.65, 0, 0.35, 1], delay: t(2.5) }}
-          />
+      <Moon phase={phase} color={LEVEL_HEX[n]} glow />
+      <p className="abt-body-read">
+        <span className="mono-s">Level {l.level}</span>
+        <span className="abt-body-name">{l.name}</span>
+        <span className="mono-s">
+          AI {l.ai} / Doctor {l.md}
         </span>
-        <span className="sr-only"> Overruled by the rules below.</span>
-      </motion.div>
-
-      <motion.div {...at(1.6)}>
-        <p className="term-k">Rules that fired</p>
-        {FIRED.map((r) => (
-          <div
-            key={r.when}
-            className="term-rule"
-            style={{ ["--c" as string]: LEVEL_COLOR[r.then - 1] }}
-          >
-            <b>L{r.then}</b>
-            <span>{r.when}</span>
-          </div>
-        ))}
-      </motion.div>
-
-      <motion.figcaption
-        className="docket-out"
-        initial={{ clipPath: "inset(100% 0 0 0)" }}
-        animate={{ clipPath: "inset(0% 0 0 0)" }}
-        transition={{ duration: 0.8, ease: EASE, delay: t(2.9) }}
-      >
-        <span>Released at Level {held.level}</span>
-        <span className="verdict-name">{held.name}</span>
-      </motion.figcaption>
-    </motion.figure>
+      </p>
+    </motion.li>
   );
 }
 
 export function AboutHero() {
   const jump = [
-    { n: RULES.length, what: "rules", href: "#rules" },
-    { n: PARTS.length, what: "parts", href: "#parts" },
+    { n: MODES.length, what: "modes", href: "#modes" },
     { n: SOURCES.length, what: "sources", href: "#sources" },
-    { n: FAILURES.length, what: "ways to fail", href: "#fails" },
+    { n: ORIGINS.length, what: "places", href: "#places" },
     { n: LIMITS.length, what: "limits", href: "#limits" },
   ];
   return (
-    <section className="ab-hero f-bone" data-field="light">
-      <div className="ab-hero-main">
-        <div>
-          <Lines as="h1" className="h1" delay={0.1} lines={["The rules outrank", "the model."]} />
-          <Rise delay={0.45}>
-            <p className="lede">
-              MedTriage answers health questions and then decides, before you see anything,
-              how far it was allowed to answer on its own. This page is about the second half
-              of that sentence, because the second half is the part that keeps you safe.
-            </p>
-          </Rise>
-        </div>
-        <Docket />
+    <section className="abt-hero f-ink" data-field="dark">
+      <div className="grain" aria-hidden />
+      <div className="abt-hero-copy">
+        <Lines
+          as="h1"
+          className="h1"
+          delay={0.1}
+          lines={["What it is, what it reads,", "and where it stops."]}
+        />
+        <Rise delay={0.45}>
+          <p className="lede dim">
+            MedTriage is a medical assistant with three ways to ask and one habit: it gives up
+            its own say as the risk rises. This page is the general account. Each mode has a
+            page of its own.
+          </p>
+        </Rise>
       </div>
+
+      <ol className="abt-sky" aria-label="The three levels">
+        <svg className="abt-arc" viewBox="0 0 1200 420" preserveAspectRatio="none" aria-hidden>
+          <path d="M-100 372.3A1260 1260 0 0 1 1300 372.3" />
+        </svg>
+        {LEVELS.map((l, n) => (
+          <Body key={l.level} n={n} />
+        ))}
+      </ol>
+
       <Rise delay={0.7} now className="ab-hero-foot mono">
         {jump.map((j) => (
           <a key={j.href} href={j.href} className="arrow-link">
@@ -174,22 +107,25 @@ export function AboutHero() {
   );
 }
 
-/* ════ The thesis ════ */
-
-export function Thesis() {
+/* ════ The premise ════
+ *
+ * One sentence that is true of every mode, which is why it is worded as it is: a doctor
+ * signs in triage and drug mode, a hospital comes first on a child's danger sign and at
+ * Level 3, and the model is locked out at Level 3. The moon beside it wanes the whole
+ * way, full to new, as the sentence is read.
+ */
+export function Premise() {
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.85", "end 0.5"] });
-  // The docket above ends on Level 2, so the moon settles on the half: full when the
-  // model asked to answer alone, half once the rules have had their say.
-  const phase = useTransform(scrollYProgress, [0, 1], [1, 0]);
+  const phase = useTransform(scrollYProgress, [0, 1], [1, -1]);
   return (
-    <section className="sec wrap f-ink" data-field="dark">
+    <section className="sec wrap f-bone" data-field="light">
       <div className="statement" ref={ref}>
         <div className="statement-aside">
           <Moon
             phase={phase}
-            color="#ffb01f"
-            dark="#1d2320"
+            color="#0b0d0c"
+            dark="#c9c4b8"
             grain={false}
             className="w-[min(100%,220px)] -ml-[6%]"
           />
@@ -198,185 +134,119 @@ export function Thesis() {
           <p className="big">
             <ScrubWords
               progress={scrollYProgress}
-              text="Every medical AI asks you to trust its judgement. This one publishes the rules that overrule it."
+              text="A language model writes the answers. Fixed rules decide the rest: who has to sign one, when a hospital comes first, and when the model should stop talking."
             />
           </p>
+          <div className="statement-foot">
+            <Rise>
+              <p>
+                MedTriage began as a triage system, and that is still its centre. Every
+                clinical answer is sorted onto one of three levels, and the level decides who
+                has the last word: the system, a doctor, or emergency care.
+              </p>
+            </Rise>
+            <Rise delay={0.1}>
+              <p>
+                Two more modes sit beside it. Drug mode is triage with the medicine looked up
+                live. Child-health mode is a different thing: it answers from WHO and IMNCI
+                pages, and it carries no level at all.
+              </p>
+            </Rise>
+          </div>
         </div>
       </div>
     </section>
   );
 }
 
-/* ════ The rule table ════
+/* ════ The three modes ════
  *
- * Reading order is evaluation order; the list is `RULES` as written and must stay so.
- * Every row prints its level in words as well as colour, and carries its own plate.
+ * The header's dropdown, at full size: the same three entries and the same glyphs
+ * (`MODES` in `SiteShell.tsx`), each opening its own page. The two facts under each are
+ * the ones that tell the modes apart, and the source count is read from `sources.ts`.
  */
-export function RuleTable() {
+const MODE_FACTS: Record<string, { use: SourceUse; level: string }> = {
+  "/triage": { use: "triage", level: "Three levels" },
+  "/drugs": { use: "drugs", level: "Held for a doctor" },
+  "/child": { use: "child", level: "No level" },
+};
+
+export function ModesIndex() {
   return (
-    <section className="sec wrap f-ink" data-field="dark" id="rules" style={{ paddingTop: 0 }}>
-      <div className="rules-head">
-        <Lines lines={[`${RULES.length === 8 ? "Eight" : RULES.length} rules, in the`, "order they run."]} />
-        <Rise delay={0.1}>
-          <p className="lede dim">
-            The guardian applies them from the top, and it is the only part of the system
-            allowed to set your level. The model does not get a vote.
-          </p>
-        </Rise>
-      </div>
-
-      <ol className="rules">
-        {RULES.map((r, n) => (
-          <motion.li
-            key={r.when}
-            className="rule"
-            style={{ ["--c" as string]: LEVEL_COLOR[r.then - 1] }}
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "0px 0px -6% 0px" }}
-            transition={{ duration: 0.7, ease: EASE, delay: (n % 4) * 0.05 }}
-          >
-            <span className="rule-lv">Level {r.then}</span>
-            <span className="rule-when">{r.when}</span>
-            <p className="rule-note">{r.note}</p>
-            <span className="rule-thumb">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/rules/${r.plate}`} alt={r.alt} loading="lazy" />
-            </span>
-          </motion.li>
-        ))}
-      </ol>
-
-    </section>
-  );
-}
-
-/* ════ The parts ════ */
-
-function Part({ name, does, last }: { name: string; does: string; last: boolean }) {
-  const ref = useRef<HTMLLIElement>(null);
-  const on = useInView(ref, { once: true, margin: "0px 0px -42% 0px" });
-  return (
-    <li ref={ref} className={`part${last ? " last" : ""}`} data-on={on}>
-      <h3 className="h3">{name}</h3>
-      <p>{does}</p>
-    </li>
-  );
-}
-
-export function Parts() {
-  const ref = useRef<HTMLOListElement>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.58", "end 0.58"] });
-  return (
-    <section className="sec wrap f-bone" data-field="light" id="parts">
-      <div className="parts-grid">
-        <div className="parts-head">
-          <Lines lines={["Five parts.", "One sets your level."]} />
-          <Rise delay={0.15}>
-            <p className="lede">
-              A question passes through them in this order. The last one is the only one
-              whose word is final.
-            </p>
-          </Rise>
-        </div>
-        <ol className="parts" ref={ref}>
-          <span className="parts-line" aria-hidden>
-            <motion.i style={{ scaleY: scrollYProgress }} />
-          </span>
-          {PARTS.map((p, n) => (
-            <Part key={p.name} name={p.name} does={p.does} last={n === PARTS.length - 1} />
-          ))}
-        </ol>
-      </div>
-    </section>
-  );
-}
-
-/* ════ The wait ════
- *
- * The page's one moving picture: three traces that part, disagree and resolve
- * (`Signal.tsx`), driven by the same phase index as the four captions below. The phases
- * advance on a timer while the band is on screen and can be picked by hand.
- */
-const PHASE_MS = 6500;
-
-export function Wait() {
-  const still = useStillness();
-  const ref = useRef<HTMLElement>(null);
-  const seen = useInView(ref, { margin: "0px 0px -30% 0px" });
-  const [i, setI] = useState(0);
-
-  useEffect(() => {
-    if (still || !seen) return;
-    const id = window.setTimeout(() => setI((v) => (v + 1) % PHASES.length), PHASE_MS);
-    return () => window.clearTimeout(id);
-  }, [i, still, seen]);
-
-  return (
-    <section className="wait-band" data-field="dark" ref={ref}>
-      <Signal phase={i} />
-
-      <div>
-        <Lines lines={["What happens", "while you wait."]} />
-        <Rise delay={0.15}>
-          <p className="lede dim">
-            Four things, in order. The wait is as long as the slowest source, not the sum of
-            all three.
-          </p>
-        </Rise>
-      </div>
-
-      <div className="phases" role="group" aria-label="The four phases">
-        {PHASES.map((p, n) => (
-          <button
-            key={p.head}
-            className="phase"
-            aria-pressed={n === i}
-            onClick={() => setI(n)}
-            style={{ ["--dwell" as string]: `${PHASE_MS}ms` }}
-          >
-            <span className="lv-track">
-              <span className="lv-fill" key={`${i}-${seen}`} />
-            </span>
-            <span className="lv-name">{p.head}</span>
-            <span className="phase-body">{p.body}</span>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ════ Failure ════ */
-
-export function Fails() {
-  return (
-    <section className="sec wrap f-bone" data-field="light" id="fails">
-      <div className="fail-head">
-        <Lines lines={["Every failure falls", "towards a human."]} />
+    <section className="sec wrap f-bone2" data-field="light" id="modes">
+      <div className="sec-head">
+        <Lines lines={["Three ways", "to ask."]} />
         <Rise delay={0.1}>
           <p className="lede">
-            Software fails. The question worth asking of a medical system is not whether it
-            fails, but which way it falls when it does.
+            Each has its own page: what it does with a question, what it reads, and what it
+            leaves out on purpose.
           </p>
         </Rise>
       </div>
-      <div className="fails">
-        {FAILURES.map((f, n) => (
-          <Rise key={f.when} delay={(n % 2) * 0.08}>
-            <article className="fail">
-              <div className="fail-top">
-                <h3 className="h3">{f.when}</h3>
-                <span className="fail-arrow" aria-hidden>
-                  <Arrow />
+      <div className="mode-cards">
+        {MODES.map((m, n) => {
+          const fact = MODE_FACTS[m.href];
+          const count = SOURCES.filter((s) => s.uses.includes(fact.use)).length;
+          return (
+            <Rise key={m.href} delay={n * 0.08}>
+              <Link href={m.href} className="mode-card">
+                <span className="mode-card-top">
+                  <svg className="mode-card-glyph" viewBox="0 0 28 28" fill="none" aria-hidden>
+                    {m.glyph}
+                  </svg>
+                  <span className="mode-card-go" aria-hidden>
+                    <Arrow />
+                  </span>
                 </span>
-              </div>
-              <p>{f.then}</p>
-            </article>
-          </Rise>
-        ))}
+                <span className="mode-card-body">
+                  <span className="h3">{m.name}</span>
+                  <span className="mode-card-line">{m.line}</span>
+                </span>
+                <span className="mode-card-facts mono-s">
+                  <span>{fact.level}</span>
+                  <span>{count} sources</span>
+                </span>
+              </Link>
+            </Rise>
+          );
+        })}
       </div>
     </section>
+  );
+}
+
+/* ════ What it keeps ════
+ *
+ * Each line is how the product behaves today (the accounts design, and child mode's own
+ * rules), stated plainly. Nothing here is a promise about the future or a legal claim.
+ */
+const KEEPS = [
+  {
+    title: "It is kept on the server",
+    body: "Your consultations, your profile and any prescription live in the service's own database. Nothing clinical is stored in your browser.",
+  },
+  {
+    title: "Your profile is what you said",
+    body: "What you state about yourself is your profile. Anything the system picks up from a conversation is shown to you as a suggestion, and joins the profile only if you accept it.",
+  },
+  {
+    title: "A doctor sees what the system saw",
+    body: "A doctor's list shows the question and the patient. Opening a case shows your background exactly as the system read it, and each opening is recorded.",
+  },
+  {
+    title: "A child's questions stay apart",
+    body: "Your profile describes you, not your child. Child-health mode does not read it, and nothing your child has is added to it.",
+  },
+];
+
+export function Keeps() {
+  return (
+    <Nots
+      field="bone2"
+      lines={["What it keeps,", "and who sees it."]}
+      lede="A health question is not small talk. This is where yours goes."
+      items={KEEPS}
+    />
   );
 }
 

@@ -26,7 +26,7 @@ function Banner({ override }: { override: NonNullable<ChildView["override"]> }) 
           <p className="text-[14px] font-medium text-t3 leading-snug">
             {unchecked
               ? "If your child has any of these signs, go to the nearest hospital now:"
-              : "Go to the nearest hospital or emergency department now."}
+              : "Call 112 or go to the nearest hospital or emergency department now."}
           </p>
           {!unchecked && (
             <p className="text-[13px] text-foreground mt-1 leading-relaxed">

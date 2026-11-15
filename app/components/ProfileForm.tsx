@@ -16,6 +16,8 @@ export interface Profile {
   allergies: ProfileEntry[];
   medications: ProfileEntry[];
   conditions: ProfileEntry[];
+  // Only for listing government hospitals near the patient. Never part of the assessment.
+  pin_code: string | null;
 }
 
 export const EMPTY_PROFILE: Profile = {
@@ -24,6 +26,7 @@ export const EMPTY_PROFILE: Profile = {
   allergies: [],
   medications: [],
   conditions: [],
+  pin_code: null,
 };
 
 const GENDERS: [string, string][] = [
@@ -140,6 +143,7 @@ export function ProfileForm({
       allergies: clean(profile.allergies),
       medications: clean(profile.medications),
       conditions: clean(profile.conditions),
+      pin_code: profile.pin_code?.trim() || null,
     };
     const res = await fetch("/api/me/profile", {
       method: "PUT",
@@ -190,6 +194,27 @@ export function ProfileForm({
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label htmlFor="pin" className="label block mb-2">
+            Pin code
+          </label>
+          <input
+            id="pin"
+            inputMode="numeric"
+            autoComplete="postal-code"
+            maxLength={6}
+            pattern="[1-9][0-9]{5}"
+            title="Six digits, not starting with 0"
+            value={profile.pin_code ?? ""}
+            onChange={(e) => set({ pin_code: e.target.value.replace(/\D/g, "") || null })}
+            placeholder="e.g. 700020"
+            aria-describedby="pin-note"
+            className={INPUT}
+          />
+          <p id="pin-note" className="text-[12px] text-muted mt-1.5 leading-snug">
+            Only used to list hospitals in your area. It never goes into an assessment.
+          </p>
         </div>
       </div>
 

@@ -90,7 +90,7 @@ export function Hero() {
           </Rise>
           <Rise delay={0.62} className="hero-actions">
             <Btn href="/chat">Start a consultation</Btn>
-            <Link href="/about" className="arrow-link">
+            <Link href="/triage" className="arrow-link">
               How it works <Arrow />
             </Link>
           </Rise>
@@ -655,7 +655,7 @@ export function Constraints() {
             </p>
           </Rise>
           <Rise delay={0.25} className="mt-9">
-            <Link href="/about#rules" className="arrow-link">
+            <Link href="/triage#rules" className="arrow-link">
               Read the eight rules <Arrow />
             </Link>
           </Rise>
@@ -686,7 +686,7 @@ export function Constraints() {
             RULES.map((r) => (
               <Link
                 key={`${copy}-${r.when}`}
-                href="/about#rules"
+                href="/triage#rules"
                 className="plate-card"
                 aria-hidden={copy === 1 || undefined}
                 tabIndex={copy === 1 ? -1 : undefined}

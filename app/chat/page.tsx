@@ -32,6 +32,8 @@ import {
 import { postJson, useAccount } from "@/lib/account";
 import { CheckInCard, ComeBackIf, type CheckInAnswer, type FollowUp } from "../components/FollowUp";
 import { ChildAnswer, type ChildView } from "../components/ChildAnswer";
+import { Signposts } from "../components/Signposts";
+import type { Signposts as SignpostsData } from "../lib/signposts";
 import { PrescriptionLink, type PrescriptionRef } from "../components/PrescriptionLink";
 
 // ----- Model definitions with inline SVG logos -----
@@ -105,6 +107,11 @@ interface Message {
   child?: ChildView | null;
   // Where to open a prescription the patient may see, once a doctor has issued it.
   prescription?: PrescriptionRef | null;
+  // Helplines and nearby government hospitals, chosen by the backend. A failed turn has them too.
+  signposts?: SignpostsData | null;
+  // Level 3 only: whether the orchestrator detected an emergency. A level 3 for any other
+  // reason (an escalation, a high risk) is locked but is not "call 112".
+  emergency?: boolean;
 }
 
 /* A consultation as the server lists it. Consultations live in the account, not on
@@ -129,6 +136,7 @@ interface StoredMessage {
   explanation: Explanation | null;
   pipeline: Record<string, unknown> | null;
   child: ChildView | null;
+  signposts: SignpostsData | null;
   created_at: string;
   review: { status: "pending" | "verified" | "rejected"; notes: string | null } | null;
 }
@@ -150,6 +158,10 @@ function fromStored(m: StoredMessage): Message {
     doctorNotes: m.review?.notes ?? undefined,
     explanation: m.explanation,
     child: m.child,
+    signposts: m.signposts,
+    // A check-in's urgent reply has no pipeline; it is an emergency, so only an explicit
+    // false from the orchestrator makes a level 3 a non-emergency.
+    emergency: typeof p.is_emergency === "boolean" ? p.is_emergency : undefined,
     pipeline:
       m.role === "assistant" && !m.child
         ? {
@@ -242,7 +254,7 @@ const PIPELINE = [
 
 // Simulated response for Level 3 (used only if the backend supplies no text)
 function simulateLevel3Response(): string {
-  return "EMERGENCY DETECTED — This system is now locked for your safety.\n\nYour symptoms suggest a potentially life-threatening condition. Please call emergency services (911) immediately or proceed to the nearest emergency room.\n\nDo not wait. Time is critical.";
+  return "This conversation is locked for your safety.\n\nCall 112 now or go to the nearest emergency department.\n\nDo not wait for this system.";
 }
 
 /* All three retrieval branches return the same shape, which is what lets them be
@@ -303,6 +315,7 @@ interface TriageAPIResponse {
   is_emergency: boolean;
   triage_level: TriageLevel | null;
   explanation: Explanation | null;
+  signposts?: SignpostsData | null;
 }
 
 type ProgressEvent =
@@ -319,7 +332,7 @@ type ProgressEvent =
       certainty: Explanation["certainty"];
       differential?: Explanation["differential"];
     }
-  | { type: "error"; message: string }
+  | { type: "error"; message: string; signposts?: SignpostsData | null }
   | ({ type: "done" } & TriageAPIResponse);
 
 /* Read the SSE body, forwarding progress and returning the terminal payload.
@@ -329,13 +342,15 @@ type ProgressEvent =
 async function readTriageStream(
   res: Response,
   onProgress: (event: ProgressEvent) => void
-): Promise<TriageAPIResponse | null> {
+): Promise<{ final: TriageAPIResponse | null; failed: { message: string; signposts?: SignpostsData | null } | null }> {
   const reader = res.body?.getReader();
-  if (!reader) return null;
+  if (!reader) return { final: null, failed: null };
 
   const decoder = new TextDecoder();
   let buffer = "";
   let final: TriageAPIResponse | null = null;
+  // The backend's own account of a failed turn: try again, 112 first, and its helplines.
+  let failed: { message: string; signposts?: SignpostsData | null } | null = null;
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -359,11 +374,14 @@ async function readTriageStream(
       if (event.type === "done") {
         final = event;
       }
+      if (event.type === "error") {
+        failed = { message: event.message, signposts: event.signposts };
+      }
       onProgress(event);
     }
   }
 
-  return final;
+  return { final, failed };
 }
 
 async function getTriageResponse(
@@ -388,6 +406,8 @@ async function getTriageResponse(
   confidence?: number;
   pipeline?: PipelineMetadata;
   explanation?: Explanation | null;
+  signposts?: SignpostsData | null;
+  emergency?: boolean;
   error?: { type: Message["errorType"]; message: string };
 }> {
   try {
@@ -433,7 +453,7 @@ async function getTriageResponse(
           error: {
             type: "api_offline",
             message:
-              "The triage service isn't responding. Start the backend and send this again.",
+              "The triage service isn't responding. Start the backend and send this again. If this is an emergency, call 112 now.",
           },
         };
       }
@@ -459,7 +479,18 @@ async function getTriageResponse(
       };
     }
 
-    const data = await readTriageStream(res, onProgress);
+    const { final: data, failed } = await readTriageStream(res, onProgress);
+
+    // The backend said the turn failed (nothing saved, nothing locked): its wording, which
+    // names 112, and the helplines it chose.
+    if (!data && failed) {
+      return {
+        content: "",
+        level: 1,
+        signposts: failed.signposts ?? null,
+        error: { type: "api_error", message: failed.message },
+      };
+    }
 
     // The stream ended without a terminal event — the pipeline died mid-turn. Treated
     // as an empty response rather than a transport error, because the request itself
@@ -486,6 +517,7 @@ async function getTriageResponse(
         content: data.response ?? "",
         mode: "child",
         child: data.child ?? null,
+        signposts: data.signposts ?? null,
         title: data.title,
       };
     }
@@ -535,6 +567,7 @@ async function getTriageResponse(
       messageId: data.message_id,
       followup: data.followup ?? null,
       prescription: data.prescription ?? null,
+      signposts: data.signposts ?? null,
     };
 
     if (data.triage_level === 1) {
@@ -569,6 +602,7 @@ async function getTriageResponse(
       ...ids,
       content: data.orchestrator_response || simulateLevel3Response(),
       level: 3,
+      emergency: data.is_emergency,
       title: data.title,
       intentType: data.intent_type,
       confidence: data.intent_confidence,
@@ -597,7 +631,7 @@ async function getTriageResponse(
         error: {
           type: "api_offline",
           message:
-            "Couldn't reach the triage service. Check that the backend is running and try again.",
+            "Couldn't reach the triage service. Check that the backend is running and try again. If this is an emergency, call 112 now.",
         },
       };
     }
@@ -672,6 +706,10 @@ const LEVEL_CONSEQUENCE: Record<TriageLevel, string> = {
   3: "The system has stopped. Get emergency care now — don’t wait on this.",
 };
 
+// A level 3 for a reason other than an emergency (an escalation, a high risk): locked, but
+// not "get emergency care". There is no review case behind it, so it promises no doctor.
+const LOCKED_NOT_EMERGENCY = "This needs a doctor's attention, and MedTriage can't continue this conversation.";
+
 const ERROR_TITLES: Record<string, string> = {
   api_offline: "Service unreachable",
   timeout: "Request timed out",
@@ -725,7 +763,7 @@ const EMPTY_STATE = {
   },
 } as const;
 
-/* The page reads `?mode=` and `?q=` once, on arrival, so the mode pages (`/drugs`,
+/* The page reads `?mode=` and `?q=` once, on arrival, so the mode pages (`/triage`, `/drugs`,
    `/child`) can open a consultation in their mode with the question already in the
    composer. It only fills the box: nothing is sent until the person sends it, and the
    mode still goes through `pickMode`'s rules once a conversation exists. Reading the
@@ -744,6 +782,10 @@ function Chat() {
   const [input, setInput] = useState(() => arrival.get("q") ?? "");
   const [isTyping, setIsTyping] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  // What the lock is for, read from the answer that locked it. Only the orchestrator's
+  // explicit "not an emergency" softens the wording; an urgent check-in reply carries no flag.
+  const lockedForEmergency =
+    [...messages].reverse().find((m) => m.role === "ai" && m.triageLevel === 3)?.emergency !== false;
   const [conversationTitle, setConversationTitle] = useState<string>("Untitled Conversation");
   const [mode, setMode] = useState<"triage" | "drugs" | "child">(() => {
     const asked = arrival.get("mode");
@@ -1015,6 +1057,7 @@ function Chat() {
         content: response.error.message,
         errorType: response.error.type,
         timestamp: new Date(),
+        signposts: response.signposts,
       };
       setMessages((prev) => [...prev, errorMessage]);
       return;
@@ -1032,6 +1075,8 @@ function Chat() {
       explanation: response.explanation,
       child: response.child,
       prescription: response.prescription,
+      signposts: response.signposts,
+      emergency: response.emergency,
     };
 
     setMessages((prev) => [...prev, aiMessage]);
@@ -1161,8 +1206,9 @@ function Chat() {
                 Session locked
               </p>
               <p className="text-[13px] text-foreground leading-relaxed">
-                Emergency services have been alerted. Go to the nearest hospital
-                or emergency room now — do not wait for this system.
+                {lockedForEmergency
+                  ? "This conversation is locked. Call 112 now or go to the nearest emergency department."
+                  : LOCKED_NOT_EMERGENCY}
               </p>
             </div>
           </div>
@@ -1548,12 +1594,22 @@ function Chat() {
             <RefreshCw className="w-3.5 h-3.5" />
             Put it back in the box
           </button>
+          <Signposts signposts={message.signposts} />
         </div>
       );
     }
 
     if (message.role === "ai" && message.child) {
-      return <ChildAnswer child={message.child} timestamp={message.timestamp} />;
+      return (
+        <>
+          <ChildAnswer child={message.child} timestamp={message.timestamp} />
+          {message.signposts && (
+            <div className="pl-[18px]">
+              <Signposts signposts={message.signposts} />
+            </div>
+          )}
+        </>
+      );
     }
 
     if (message.role === "ai" && message.triageLevel) {
@@ -1568,7 +1624,9 @@ function Chat() {
             <span className={`data text-[11px] font-semibold ${cfg.text}`}>
               Level {message.triageLevel}
             </span>
-            <span className="data text-[11px] text-muted">{cfg.note}</span>
+            <span className="data text-[11px] text-muted">
+              {message.triageLevel === 3 && message.emergency === false ? "AI stopped" : cfg.note}
+            </span>
             <span className="data text-[10px] text-muted ml-auto shrink-0">
               {message.timestamp.toLocaleTimeString([], {
                 hour: "2-digit",
@@ -1584,6 +1642,8 @@ function Chat() {
           >
             {message.content}
           </div>
+
+          <Signposts signposts={message.signposts} />
 
           {message.explanation && <EvidenceTrace explanation={message.explanation} />}
 
@@ -1821,7 +1881,9 @@ function Chat() {
                         <p
                           className={`text-[13px] font-medium mt-2 ${cfg.text}`}
                         >
-                          {LEVEL_CONSEQUENCE[message.triageLevel]}
+                          {message.triageLevel === 3 && message.emergency === false
+                            ? LOCKED_NOT_EMERGENCY
+                            : LEVEL_CONSEQUENCE[message.triageLevel]}
                         </p>
                       </div>
 

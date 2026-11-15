@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteShell } from "../components/site/SiteShell";
 import { Sources } from "../components/site/Knowledge";
 import { DrugHero, Nots, Steps, type Step } from "../components/site/Modes";
+import { SignOff } from "../components/site/SignOff";
 
 export const metadata: Metadata = {
   title: "Drug mode: ask about a medicine, a doctor signs it off",
@@ -12,7 +13,8 @@ export const metadata: Metadata = {
 /* Drug mode's page. Every step below is something the pipeline does today, in the
    patient's terms: the record the agents are given, the live FDA, RxNorm and PubMed
    lookups, the guardian's two drug rules (`app/lib/rules.ts` has their wording), and the
-   prescriber's draft that only a doctor can issue. Edit a step only if that behaviour
+   prescriber's draft that only a doctor can issue. The sign-off after the steps
+   (`site/SignOff.tsx`) is a working model of the last two. Edit a step only if that behaviour
    changed in agents-core. */
 const STEPS: Step[] = [
   {
@@ -67,8 +69,9 @@ export default function DrugsPage() {
         lede="Five things, in order. The last one is a person."
         steps={STEPS}
       />
+      <SignOff />
       <Nots
-        field="ink"
+        field="bone2"
         lines={["What it will", "not do."]}
         lede="Three limits that do not depend on what the model writes."
         items={NOTS}

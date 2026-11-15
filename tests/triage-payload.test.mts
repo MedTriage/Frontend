@@ -44,3 +44,15 @@ test("a triage turn forwards the link to a visible prescription, and nothing els
   assert.deepEqual(clientPayload({ ...TRIAGE, prescription: link }).prescription, link);
   assert.equal(clientPayload(TRIAGE).prescription, null);
 });
+
+test("a triage turn carries the helplines and facilities the backend chose", () => {
+  const signposts = { helplines: [{ key: "emergency_112", name: "112", blurb: "Emergency", call: ["112"] }],
+                      facilities: { needs_pin_code: true } };
+  assert.deepEqual(clientPayload({ ...TRIAGE, signposts }).signposts, signposts);
+  assert.equal(clientPayload(TRIAGE).signposts, null);
+});
+
+test("a child-health turn carries its signposts too", () => {
+  const signposts = { helplines: [], facilities: null };
+  assert.deepEqual(clientPayload({ mode: "child", signposts }).signposts, signposts);
+});

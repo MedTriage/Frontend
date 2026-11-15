@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteShell } from "../components/site/SiteShell";
 import { Sources } from "../components/site/Knowledge";
 import { ChildHero, Nots, Steps, type Step } from "../components/site/Modes";
+import { SignCheck } from "../components/site/SignCheck";
 
 export const metadata: Metadata = {
   title: "Child health: questions about a child, answered from WHO and IMNCI guidance",
@@ -10,7 +11,8 @@ export const metadata: Metadata = {
 };
 
 /* Child-health mode's page. The steps are the backend's child graph in the parent's
-   terms (sign check, retrieval, answer, the two rules that are code), and the limits
+   terms (sign check, retrieval, answer, the two rules that are code), the sign check
+   after them is a working model of the first step (`site/SignCheck.tsx`), and the limits
    are its deliberate omissions. Edit either only if agents-core's child mode changed. */
 const STEPS: Step[] = [
   {
@@ -64,15 +66,16 @@ export default function ChildPage() {
         lede="Four steps. The first and the last are not the model's to decide."
         steps={STEPS}
       />
+      <SignCheck />
       <Nots
-        field="bone"
+        field="bone2"
         lines={["What it leaves", "out, on purpose."]}
         lede="Child-health mode is not triage, and it does not pretend to be."
         items={NOTS}
       />
       <Sources
         only="child"
-        field="bone2"
+        field="bone"
         lines={["The pages", "it answers from."]}
         lede="Three sets of documents. An answer may cite only a passage that was actually retrieved from them."
       />

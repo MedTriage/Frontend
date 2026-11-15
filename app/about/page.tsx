@@ -3,36 +3,34 @@ import { SiteShell } from "../components/site/SiteShell";
 import {
   AboutHero,
   Colophon,
-  Fails,
+  Keeps,
   Limits,
-  Parts,
-  RuleTable,
-  Thesis,
-  Wait,
+  ModesIndex,
+  Premise,
 } from "../components/site/About";
-import { FollowUp, Sources } from "../components/site/Knowledge";
+import { Atlas } from "../components/site/Atlas";
+import { Sources } from "../components/site/Knowledge";
 
 export const metadata: Metadata = {
-  title: "How MedTriage works: the rules that outrank the model",
+  title: "About MedTriage: what it is, what it reads, and where it stops",
   description:
-    "The eight rules that set a triage level, the five parts a question passes through, how the system fails, and what it cannot do.",
+    "A medical assistant with three ways to ask. Every source it reads and where each is published, what it keeps about you, what it cannot do, and what it is made of.",
 };
 
-/* How it works. The rule table lives in `app/lib/rules.ts`, the limits in `limits.ts`,
-   the phases in `seconds.ts`, the knowledge sources in `sources.ts`, the follow-up
-   schedule and outcomes in `followup.ts` and the colophon in `colophon.ts`; this page
-   only arranges them. The close and the footer come from the shell. */
+/* The general account. The modes are in `SiteShell.tsx` (`MODES`), the sources in
+   `app/lib/sources.ts`, where they are published in `origins.ts`, the limits in
+   `limits.ts` and the colophon in `colophon.ts`; this page only arranges them. How
+   triage works, rule by rule, moved to `/triage` when that mode got its own page. The
+   close and the footer come from the shell. */
 export default function AboutPage() {
   return (
     <SiteShell>
       <AboutHero />
-      <Thesis />
-      <RuleTable />
-      <Parts />
-      <Wait />
+      <Premise />
+      <ModesIndex />
+      <Atlas />
       <Sources />
-      <FollowUp />
-      <Fails />
+      <Keeps />
       <Limits />
       <Colophon />
     </SiteShell>

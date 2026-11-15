@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { COMPLAINTS, outcome } from "../app/lib/followup.ts";
 
-// The About page's follow-up demo mirrors the backend's check-in rules. These pin the
+// The triage page's follow-up demo mirrors the backend's check-in rules. These pin the
 // mirror, so an edit to the page's copy cannot quietly change what it claims happens.
 
 test("better resolves, with no level", () => {

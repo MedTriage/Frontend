@@ -2598,6 +2598,860 @@ a:hover > .logo-mark,
   }
 }
 
+/* ── About: hero ──
+   The three phases on one orbit; the geometry is explained in `site/About.tsx`. The
+   moons are placed by their centres, so each `li` is pulled back by half its own width,
+   and its caption simply follows the moon. `--w` also answers to the viewport's height:
+   on a wide, short screen the moons shrink before their captions leave the section. */
+.site .abt-hero {
+  position: relative;
+  min-height: 100svh;
+  padding: 132px var(--gut) clamp(28px, 4vh, 48px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: clamp(16px, 2.4vh, 32px);
+  overflow: hidden;
+}
+.site .abt-hero-copy {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 72px);
+  align-items: end;
+}
+.site .abt-hero .h1 {
+  font-size: clamp(2.2rem, 4.5vw, 4.7rem);
+}
+.site .abt-hero-copy .lede {
+  justify-self: end;
+}
+.site .abt-sky {
+  --w: clamp(132px, min(17vw, 27vh), 264px);
+  position: relative;
+  list-style: none;
+  margin: 0 calc(var(--gut) * -1);
+  padding: 0;
+  min-height: clamp(330px, 52vh, 580px);
+}
+.site .abt-arc {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+/* The box stretches, so the stroke is kept out of the stretch: dots stay dots. */
+.site .abt-arc path {
+  fill: none;
+  stroke: var(--bone);
+  stroke-opacity: 0.34;
+  stroke-width: 1.2px;
+  stroke-dasharray: 0.1 7;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.site .abt-body {
+  position: absolute;
+  width: var(--w);
+  margin: calc(var(--w) / -2) 0 0 calc(var(--w) / -2);
+}
+.site .abt-body-read {
+  margin: -3% 0 0;
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  text-align: center;
+}
+.site .abt-body-name {
+  font-size: clamp(0.98rem, 1.5vw, 1.4rem);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.site .abt-body-read .mono-s {
+  opacity: 0.62;
+}
+.site .abt-hero .ab-hero-foot {
+  position: relative;
+  z-index: 2;
+}
+@media (max-width: 900px) {
+  .site .abt-hero {
+    padding-top: 104px;
+  }
+  .site .abt-hero-copy {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site .abt-hero-copy .lede {
+    justify-self: start;
+  }
+  /* The moons are at their smallest here, so the sky need not hold a desktop's. */
+  .site .abt-sky {
+    min-height: 320px;
+  }
+}
+
+/* ── About: the three modes ──
+   The header's dropdown rows at full size. A card turns into the field's opposite under
+   the pointer, the way a source row does; no level colour, because a mode is not a level. */
+.site .mode-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.site .mode-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 28px;
+  height: 100%;
+  min-height: clamp(360px, 36vw, 500px);
+  padding: clamp(24px, 2.6vw, 40px);
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  transition: background 0.45s var(--ease), color 0.45s var(--ease);
+}
+.site .mode-card:hover,
+.site .mode-card:focus-visible {
+  background: var(--fg);
+  color: var(--field);
+}
+.site .mode-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 20px;
+}
+.site .mode-card-glyph {
+  width: clamp(84px, 9vw, 128px);
+  aspect-ratio: 1;
+  transition: transform 0.9s var(--ease);
+}
+/* Drawn for 28px in the header. At this size the strokes are held to a hairline instead
+   of scaling up with the drawing. */
+.site .mode-card-glyph * {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.3px;
+}
+.site .mode-card:hover .mode-card-glyph,
+.site .mode-card:focus-visible .mode-card-glyph {
+  transform: rotate(180deg);
+}
+.site .mode-card-go {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--fg);
+  color: var(--field);
+  transition: background 0.45s var(--ease), color 0.45s var(--ease), transform 0.6s var(--ease);
+}
+.site .mode-card-go svg {
+  width: 18px;
+  height: 18px;
+}
+.site .mode-card:hover .mode-card-go,
+.site .mode-card:focus-visible .mode-card-go {
+  background: var(--field);
+  color: var(--fg);
+  transform: rotate(-45deg);
+}
+.site .mode-card-body {
+  display: grid;
+  gap: 12px;
+  align-content: end;
+}
+.site .mode-card-line {
+  max-width: 34ch;
+  opacity: 0.72;
+}
+.site .mode-card-facts {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+}
+@media (max-width: 900px) {
+  .site .mode-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site .mode-card {
+    min-height: 0;
+  }
+}
+
+/* ── About: where it reads from ──
+   The globe stays put while the list of places is walked; the row in the middle of the
+   screen is the lit one and the globe turns to it (`site/Atlas.tsx`). The stage comes
+   first in the markup so that on a phone it can pin to the top with the rows passing
+   under it; from 900px up it is moved to the right-hand column. */
+.site .atlas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(32px, 5vw, 96px);
+  align-items: start;
+}
+.site .atlas-stage {
+  order: 2;
+  position: sticky;
+  top: max(88px, calc(50vh - min(37vh, 310px) - 24px));
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+.site .atlas-stage canvas {
+  display: block;
+  width: min(100%, 74vh, 620px);
+  aspect-ratio: 1;
+}
+.site .atlas-read {
+  margin: 0;
+  text-align: center;
+}
+.site .places {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 12vh;
+}
+.site .place {
+  padding-block: clamp(30px, 5.4vh, 64px);
+  border-top: 1px solid color-mix(in srgb, var(--fg) 16%, transparent);
+  opacity: 0.32;
+  transition: opacity 0.5s var(--ease);
+}
+.site .place[data-on="true"] {
+  opacity: 1;
+}
+.site .place-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+.site .place-name {
+  margin: 0;
+  font-size: clamp(1.9rem, 3.3vw, 3.2rem);
+  font-weight: 350;
+  letter-spacing: -0.032em;
+  line-height: 1;
+}
+.site .place-at {
+  white-space: pre;
+  opacity: 0.66;
+}
+.site .place-pubs {
+  margin: clamp(18px, 2vw, 26px) 0 0;
+  display: grid;
+  gap: 10px;
+}
+.site .place-pubs > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 18px;
+  align-items: baseline;
+}
+.site .place-pubs dt {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.45;
+  opacity: 0.66;
+}
+.site .place-pubs dd {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.3;
+}
+.site .place-note {
+  margin: 18px 0 0;
+  max-width: 46ch;
+}
+@media (max-width: 900px) {
+  .site .atlas {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  /* Pinned under where the header returns to, on the section's own ink, so the rows
+     pass beneath it. */
+  .site .atlas-stage {
+    order: 0;
+    top: 0;
+    z-index: 2;
+    margin-inline: calc(var(--gut) * -1);
+    padding: 68px var(--gut) 14px;
+    background: var(--ink);
+  }
+  .site .atlas-stage canvas {
+    width: min(74vw, 36svh);
+  }
+  .site .place-pubs > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+/* ── Mode pages: working models ──
+   The sign check on `/child` and the sign-off on `/drugs`: an object on one side (a
+   chart booklet, a prescription sheet), what the system makes of it on the other, then
+   a row of facts. Everything shared is written against `--fg` and `--field`, so the
+   rules do not depend on which field a model is drawn on. Both are on ink today. */
+.site .model {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(32px, 5vw, 96px);
+  align-items: start;
+}
+.site .model-stage {
+  position: sticky;
+  top: 96px;
+  display: grid;
+  justify-items: center;
+  gap: 22px;
+}
+.site .model-card {
+  display: grid;
+  gap: 28px;
+  padding: clamp(22px, 2.6vw, 36px);
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.site .model-card .term-k {
+  margin: 0 0 10px;
+}
+.site .model-says {
+  margin: 0;
+  font-size: clamp(1.2rem, 1.7vw, 1.55rem);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  max-width: 28ch;
+  min-height: 3.6em;
+}
+.site .model-facts {
+  --n: 4;
+  margin: clamp(48px, 6vw, 96px) 0 0;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  gap: clamp(22px, 2.6vw, 36px) clamp(20px, 3vw, 44px);
+}
+.site .model-facts dt {
+  font-size: 1.22rem;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.site .model-facts dd {
+  margin: 8px 0 0;
+  font-size: 0.98rem;
+  line-height: 1.42;
+  opacity: 0.68;
+}
+.site .pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.site .pill {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 13px;
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+  transition: background 0.35s var(--ease), color 0.35s var(--ease), transform 0.3s var(--ease);
+}
+.site .pill:hover {
+  background: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+.site .pill[aria-pressed="true"],
+.site .pill:not([aria-pressed]):hover {
+  background: var(--fg);
+  color: var(--field);
+}
+.site .pill:active {
+  transform: scale(0.96);
+}
+
+/* What the parent wrote, on `/child`: whole sentences, so they are set as lines to
+   choose from rather than as pills. */
+.site .said {
+  display: grid;
+  gap: 8px;
+}
+.site .said button {
+  padding: 13px 18px;
+  border-radius: 18px;
+  font-size: 1.14rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+  transition: background 0.35s var(--ease), color 0.35s var(--ease), transform 0.3s var(--ease);
+}
+.site .said button:hover {
+  background: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+.site .said button[aria-pressed="true"] {
+  background: var(--fg);
+  color: var(--field);
+}
+.site .said button:active {
+  transform: scale(0.985);
+}
+/* Room for its longest sentence, so the card does not change height between cases. */
+.site .read-why {
+  margin: 0;
+  max-width: 44ch;
+  min-height: 4.4em;
+  opacity: 0.7;
+}
+.site .model-card .model-says:has(+ .read-why) {
+  min-height: 0;
+  margin-bottom: 10px;
+}
+/* The booklet is taller than the controls beside it, so they keep it company down the
+   page. */
+.site .model.ctl-first .model-card {
+  position: sticky;
+  top: 96px;
+}
+
+/* The chart booklet on `/child`: two leaves bound at the top by a wire, the page of
+   danger signs for a baby under two months over the page for every other age. It is
+   paper, like the prescription sheet, so it stays bone with ink type on the night field
+   and its corners are nearly square. The leaves fan a little from the binding, which is
+   how the lower one's tab comes to show. The only colour on it is `--stop`: the box and
+   the marker on a sign the parent described, and the stamp that sign brings down. A
+   sign that was ruled out gets a dash and a line through it, in ink, because nothing
+   was found there. */
+.site .bk {
+  position: relative;
+  margin: 14px 0 26px;
+  width: min(100%, 480px);
+  transform: rotate(-1.4deg);
+}
+.site .bk::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: var(--bone-3);
+  opacity: 0.45;
+  transform-origin: 50% 0;
+  transform: rotate(-1.9deg);
+}
+.site .bk-leaves {
+  position: relative;
+  display: grid;
+}
+.site .bk-leaf {
+  grid-area: 1 / 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 46px clamp(18px, 2.2vw, 28px) clamp(16px, 1.8vw, 22px);
+  border-radius: 6px;
+  background: var(--bone);
+  color: var(--ink);
+  box-shadow: 0 34px 70px -34px rgba(0, 0, 0, 0.7);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.site .bk-leaf.any {
+  transform-origin: 50% 0;
+  transform: rotate(-0.8deg);
+}
+.site .bk-leaf[aria-hidden="true"] {
+  pointer-events: none;
+}
+/* The wire: each loop comes over the top edge and goes into a punched hole. */
+.site .bk-rings {
+  position: absolute;
+  z-index: 2;
+  top: -12px;
+  left: 7%;
+  right: 7%;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.site .bk-rings i {
+  position: relative;
+  width: 8px;
+  height: 30px;
+  border-radius: 8px;
+  border: 2px solid color-mix(in srgb, var(--bone-3) 62%, var(--ink));
+}
+.site .bk-rings i::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.site .bk-tab {
+  position: absolute;
+  top: 100%;
+  height: 28px;
+  padding: 0 13px;
+  display: flex;
+  align-items: center;
+  border-radius: 0 0 9px 9px;
+  background: var(--bone);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.site .bk-leaf.young .bk-tab {
+  left: 26px;
+}
+.site .bk-leaf.any .bk-tab {
+  right: 26px;
+}
+.site .bk-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: start;
+  gap: 14px;
+}
+.site .bk-title {
+  font-size: clamp(2rem, 2.9vw, 2.7rem);
+  font-style: italic;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+}
+/* The box the stamp is for. It stays empty on a page where no sign was described. */
+.site .bk-slot {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+  width: 150px;
+  height: 60px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px dashed color-mix(in srgb, var(--ink) 55%, transparent);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+.site .bk-slot > span {
+  opacity: 0.62;
+}
+.site .bk-stamp {
+  position: absolute;
+  inset: -6px -9px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--stop);
+  outline: 1.5px solid var(--ink);
+  outline-offset: -6px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.site .bk-age {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.site .bk-age span {
+  opacity: 0.62;
+}
+.site .bk-age b {
+  flex: 1;
+  padding: 0 4px 3px;
+  border-bottom: 1px solid var(--ink);
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+/* Dimmed through its colour, not its opacity, so the key's swatch stays full vermilion. */
+.site .bk-cols {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 14px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--ink) 64%, transparent);
+}
+.site .bk-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.site .bk-group {
+  margin: 14px 0 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.62;
+}
+.site .bk-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 4px 11px;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  font-size: 1.02rem;
+  line-height: 1.22;
+  letter-spacing: -0.012em;
+}
+.site .bk-box {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1.5px solid var(--ink);
+  overflow: hidden;
+}
+.site .bk-box i {
+  position: absolute;
+  inset: 0;
+  background: var(--stop);
+}
+.site .bk-box svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* The marker. Vermilion is saturated enough to carry ink type, so the words stay
+   readable under it. */
+.site .bk-row mark {
+  justify-self: start;
+  padding: 0.04em 0.2em;
+  margin: 0 -0.2em;
+  border-radius: 4px;
+  color: inherit;
+  background: linear-gradient(var(--stop), var(--stop)) no-repeat 0 0 / 0% 100%;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.site .bk-row [data-read="absent"] {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+/* The key to the three readings, printed in the column head. */
+.site .bk-key {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.site .bk-key i {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  margin-left: 6px;
+  border-radius: 2px;
+  border: 1px solid var(--ink);
+}
+.site .bk-key i:first-child {
+  margin-left: 0;
+}
+.site .bk-key i[data-read="present"] {
+  background: var(--stop);
+}
+.site .bk-key i[data-read="absent"]::after {
+  content: "";
+  position: absolute;
+  inset: 3px 1px auto;
+  border-top: 1px solid var(--ink);
+}
+.site .bk-more {
+  margin: 0;
+  max-width: 36ch;
+  font-size: 0.98rem;
+  line-height: 1.4;
+  opacity: 0.7;
+}
+.site .bk-foot {
+  margin: auto 0 0;
+  padding-top: 11px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  opacity: 0.82;
+}
+
+/* The prescription sheet. Paper, so its corners are nearly square and it sits a little
+   askew on a second sheet until it is issued. It is bone with ink type on whichever
+   field it is drawn, like the real sheet, which stays paper in dark mode. */
+.site .rx {
+  position: relative;
+  margin: 0;
+  width: min(100%, 470px);
+}
+.site .rx::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: var(--bone-3);
+  opacity: 0.45;
+  transform: rotate(3.2deg) translate(10px, 6px);
+}
+.site .rx-paper {
+  position: relative;
+  min-height: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: clamp(20px, 2.4vw, 32px);
+  border-radius: 6px;
+  background: var(--bone);
+  color: var(--ink);
+  box-shadow: 0 34px 70px -34px rgba(0, 0, 0, 0.7);
+}
+.site .rx-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+}
+.site .rx-mark {
+  font-size: 3.4rem;
+  font-style: italic;
+  line-height: 0.8;
+  letter-spacing: -0.04em;
+}
+.site .rx-tag {
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px dashed currentColor;
+  transition: background 0.4s var(--ease), color 0.4s var(--ease), border-color 0.4s var(--ease);
+}
+.site .rx[data-stage="issued"] .rx-tag {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--bone);
+}
+.site .rx[data-stage="stopped"] .rx-tag {
+  border: 1px solid var(--stop);
+  background: var(--stop);
+}
+.site .rx[data-stage="discarded"] .rx-tag {
+  text-decoration: line-through;
+}
+.site .rx-cols,
+.site .rx-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr));
+  gap: 6px 14px;
+  align-items: center;
+}
+.site .rx-cols {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink);
+  font-size: 11px;
+  opacity: 0.62;
+}
+.site .rx-line {
+  overflow: hidden;
+}
+.site .rx-row {
+  padding: 13px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.site .rx-name {
+  font-size: 1.28rem;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.site .rx-bar {
+  display: block;
+  height: 7px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
+}
+.site .rx-bar.inline {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.site .rx-flag {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 3px 10px;
+  /* Not a full pill: on a phone the sentence wraps to two lines. */
+  border-radius: 13px;
+  border: 1px solid var(--stop);
+  background: var(--stop);
+  transition: background 0.4s var(--ease), border-color 0.4s var(--ease);
+}
+.site .rx-flag[data-ok="true"] {
+  border-color: var(--ink);
+  background: transparent;
+}
+.site .rx-foot {
+  margin: auto 0 0;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  font-size: 11.5px;
+  line-height: 1.55;
+  opacity: 0.82;
+}
+.site .rx-note {
+  margin: 0;
+  opacity: 0.55;
+  text-align: center;
+}
+@media (max-width: 900px) {
+  .site .model {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site .model-stage {
+    position: static;
+  }
+  .site .model-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* In one column the booklet's controls go above it. Its stamp is at the top of the
+     page, so what a tap does is then in view just under the thumb. */
+  .site .model.ctl-first .model-card {
+    position: static;
+    order: -1;
+  }
+}
+@media (max-width: 560px) {
+  .site .model-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* A phone has no room for the fan: the back sheets would run off the screen. */
+  .site .bk {
+    transform: none;
+  }
+  .site .bk::before {
+    transform: rotate(-1deg);
+  }
+  .site .bk-leaf.any {
+    transform: rotate(-0.5deg);
+  }
+}
+
 /* ── Keyframes ── */
 @keyframes site-due {
   50% {

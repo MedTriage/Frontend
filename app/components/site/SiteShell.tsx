@@ -23,21 +23,23 @@ import { Arrow, Btn, EASE, LEVEL_HEX, Lines, Logo, Rise, Roll } from "./ui";
 
 const LINKS = [
   { name: "Overview", href: "/" },
-  { name: "How it works", href: "/about" },
+  { name: "About", href: "/about" },
   { name: "Consult", href: "/chat" },
+  { name: "Triage", href: "/triage" },
   { name: "Drug mode", href: "/drugs" },
   { name: "Child health", href: "/child" },
   { name: "Review queue", href: "/doctor" },
 ];
 
-/* The three ways to ask, for the header's dropdown. Each has a small moon for a glyph,
+/* The three ways to ask, for the header's dropdown and, at full size, the About page
+   (`ModesIndex`). Each opens that mode's own page, which is where its ask field is. Each has a small moon for a glyph,
    drawn in the same language as the logo: triage is the three phases side by side, drug
    mode is the half it never gets past, child health is a small moon inside a larger
    orbit. */
-const MODES = [
+export const MODES = [
   {
     name: "Triage",
-    href: "/chat",
+    href: "/triage",
     line: "Describe what is wrong. Get an answer, and the level it was released at.",
     glyph: (
       <>
@@ -460,10 +462,10 @@ function Footer() {
         </div>
         <div className="foot-col">
           <span className="k">Read</span>
-          <Link href="/about#rules">
+          <Link href="/triage#rules">
             <Roll>The eight rules</Roll>
           </Link>
-          <Link href="/about#fails">
+          <Link href="/triage#fails">
             <Roll>How it fails</Roll>
           </Link>
           <Link href="/about#limits">

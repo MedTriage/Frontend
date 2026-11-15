@@ -20,6 +20,8 @@ export function clientPayload(data: Data): Data {
       child: data.child ?? null,
       triage_level: null,
       followup: null,
+      // Helplines and nearby hospitals, chosen by the backend; 112 and 108 on a danger sign.
+      signposts: data.signposts ?? null,
     };
   }
 
@@ -65,5 +67,8 @@ export function clientPayload(data: Data): Data {
     // Where to find a prescription the patient may see: its id, status and message. Never its
     // contents, which only the sheet shows, under its own label.
     prescription: data.prescription || null,
+    // Helplines and nearby government hospitals, chosen by the backend from its one table
+    // of numbers. Rendered as given; never chosen or filled in here.
+    signposts: data.signposts ?? null,
   };
 }
