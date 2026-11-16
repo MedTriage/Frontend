@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, useTransform, type MotionValue } from "motion/react";
+import { R, litPath, phaseOf } from "../../lib/phase";
 
 /* ── The moon ──
  *
@@ -18,17 +19,8 @@ import { motion, useTransform, type MotionValue } from "motion/react";
  * the light is still there, around the thing that has stopped answering.
  */
 
-const R = 100;
-
-export function phaseOf(ai: number) {
-  return ai / 50 - 1;
-}
-
-export function litPath(phase: number) {
-  const k = Math.max(-1, Math.min(1, phase));
-  const rx = (Math.abs(k) * R).toFixed(2);
-  return `M0 ${-R}A${R} ${R} 0 0 1 0 ${R}A${rx} ${R} 0 0 ${k >= 0 ? 1 : 0} 0 ${-R}Z`;
-}
+// The arithmetic lives in `app/lib/phase.ts`, where the server can reach it too.
+export { litPath, phaseOf };
 
 export function Moon({
   phase,

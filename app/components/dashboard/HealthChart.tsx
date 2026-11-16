@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Skel } from "../Skeleton";
 import {
   formatValue,
   latestByKind,
@@ -154,7 +155,7 @@ export function HealthChart({
           {latest
             ? `Latest ${formatValue(latest)} ${latest.unit} on ${shortDay(parseDay(latest.measured_on))}.${previous ? ` ${previous}.` : ""}`
             : readings === null
-              ? " "
+              ? <Skel className="inline-block h-[12px] w-[230px] max-w-full align-middle" />
               : `No ${tab.label.toLowerCase()} recorded yet.`}
         </p>
         {twoLines && series.length > 0 && (

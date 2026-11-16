@@ -288,7 +288,7 @@ export function EvidenceTrace({
         : "border-l-t1";
 
   return (
-    <figure className="mt-3 border border-border bg-card rise">
+    <figure className="mt-4 rounded-[16px] bg-sunk overflow-hidden rise">
       <figcaption
         className={`flex items-center justify-between gap-3 px-4 pt-3.5 pb-2.5 ${expanded ? "border-b border-border" : ""}`}
       >

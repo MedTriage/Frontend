@@ -48,7 +48,7 @@ export function ComeBackIf({ followup }: { followup: FollowUp }) {
   const doctor = followup.return_signs.filter((s) => s.level === "level_2");
 
   return (
-    <section aria-label="What to watch for" className="border border-border bg-card">
+    <section aria-label="What to watch for" className="rounded-[22px] border border-border bg-card overflow-hidden">
       <div className="px-4 pt-4 pb-3 border-b border-border">
         <p className="label mb-1.5">Come back if</p>
         <p className="text-[13px] text-muted leading-relaxed">
@@ -106,7 +106,7 @@ export function CheckInCard({
     setSigns((all) => (all.includes(text) ? all.filter((s) => s !== text) : [...all, text]));
 
   return (
-    <section aria-label="Check-in" className="w-full max-w-[720px] mx-auto border border-foreground bg-card mb-3 rise">
+    <section aria-label="Check-in" className="w-full max-w-[760px] mx-auto rounded-[22px] overflow-hidden border border-foreground bg-card mb-3 rise">
       <div className="px-4 pt-4 pb-3 border-b border-border">
         <p className="label mb-1">Check-in</p>
         <p className="text-[15px] font-medium">How is it going?</p>

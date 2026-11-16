@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
+import { MARK_BODY, MARK_LIMB } from "../../lib/mark";
 import Link from "next/link";
 import {
   motion,
@@ -32,8 +33,8 @@ export function LogoMark({ className = "" }: { className?: string }) {
       aria-hidden
     >
       <g transform="rotate(-24 16 16)">
-        <path d="M16.5 1.9c7.9-.3 13.9 6.2 13.6 14.2-.3 7.8-6.4 14.1-14.4 13.9-3.7-4-5.5-9-5.3-14.2.2-5.1 2.2-9.9 6.1-13.9Z" />
-        <path d="M11.8 3C6.1 5 1.8 10 1.9 16.2c.1 6.1 4.3 11 9.5 12.8-4.3-3-6.9-7.6-7-12.9C4.3 10.8 7.2 6 11.8 3Z" />
+        <path d={MARK_BODY} />
+        <path d={MARK_LIMB} />
       </g>
     </svg>
   );

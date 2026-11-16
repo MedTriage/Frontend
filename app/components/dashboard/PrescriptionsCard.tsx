@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Skel } from "../Skeleton";
 import Link from "next/link";
 import { ChevronRight, Pill } from "lucide-react";
 import { shortDay, type PrescriptionSummary } from "../../lib/dashboard";
@@ -41,7 +42,15 @@ export function PrescriptionsCard({
         )}
       </div>
 
-      {prescriptions === null && !error && <div className="mt-3 h-[66px] rounded-xl bg-background" aria-hidden />}
+      {prescriptions === null && !error && (
+        <div className="mt-3 h-[66px] rounded-xl border border-border px-3.5 flex items-center gap-3" role="status" aria-label="Loading prescriptions">
+          <Skel className="h-9 w-9 shrink-0 rounded-lg" />
+          <span className="flex-1">
+            <Skel className="h-[12px] w-[58%]" delay={0.1} />
+            <Skel className="mt-2 h-[10px] w-[36%]" delay={0.2} />
+          </span>
+        </div>
+      )}
 
       {error && (
         <p className="mt-2 text-[13px] text-muted">

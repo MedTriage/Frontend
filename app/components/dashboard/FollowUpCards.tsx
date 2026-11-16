@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Skel } from "../Skeleton";
 import { CalendarClock, ChevronRight, HeartHandshake } from "lucide-react";
 import { episodeLine, visibleEpisodes, type FollowUpEpisode } from "../../lib/dashboard";
 
@@ -6,7 +7,12 @@ import { episodeLine, visibleEpisodes, type FollowUpEpisode } from "../../lib/da
    opens its conversation, which is where a check-in is answered. */
 export function FollowUpCards({ episodes }: { episodes: FollowUpEpisode[] | null }) {
   if (episodes === null) {
-    return <div className="h-[84px] rounded-2xl bg-card border border-border" aria-hidden />;
+    return (
+      <div className="h-[84px] rounded-2xl bg-card border border-border px-5 py-4" role="status" aria-label="Loading follow-ups">
+        <Skel className="h-[14px] w-[92px]" />
+        <Skel className="mt-3.5 h-[12px] w-[68%]" delay={0.12} />
+      </div>
+    );
   }
   if (episodes.length === 0) {
     return (

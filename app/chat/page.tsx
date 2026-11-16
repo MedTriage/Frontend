@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useRef, useEffect, useCallback } from "react";
+import { Suspense, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowUp,
@@ -19,22 +19,38 @@ import {
   ChevronDown,
   Lock,
   Plus,
+  SquarePen,
+  History,
+  PanelLeft,
+  LayoutDashboard,
+  Home,
+  Info,
+  LogOut,
+  Sun,
+  Moon as MoonIcon,
   Trash2,
   AlertTriangle,
-  X,
+  ArrowLeft,
+  Search,
+  Printer,
 } from "lucide-react";
+import Link from "next/link";
 import { Navbar } from "../components/Navbar";
+import { useTheme } from "../components/ThemeProvider";
+import { LogoMark } from "../components/site/ui";
 import {
-  EvidenceTrace,
   type Explanation,
   type SourceStatus,
 } from "../components/EvidenceTrace";
 import { postJson, useAccount } from "@/lib/account";
+import { ChatOutline, outlineTarget } from "../components/ChatOutline";
+import { TranscriptSkeleton } from "../components/Skeleton";
 import { CheckInCard, ComeBackIf, type CheckInAnswer, type FollowUp } from "../components/FollowUp";
 import { ChildAnswer, type ChildView } from "../components/ChildAnswer";
 import { Signposts } from "../components/Signposts";
 import type { Signposts as SignpostsData } from "../lib/signposts";
 import { PrescriptionLink, type PrescriptionRef } from "../components/PrescriptionLink";
+import { Avatar, LevelStamp, PhaseMark, PlainStamp, Turn } from "../components/ChatTurn";
 
 // ----- Model definitions with inline SVG logos -----
 interface ModelOption {
@@ -139,6 +155,33 @@ interface StoredMessage {
   signposts: SignpostsData | null;
   created_at: string;
   review: { status: "pending" | "verified" | "rejected"; notes: string | null } | null;
+}
+
+/* What the copy button puts on the clipboard: the answer with its level, its review
+   status and the standing disclaimer written in, so a pasted answer still says what it is.
+   The level and the status are the backend's, as stored on the message. */
+const LOG_FIELD = { 1: "bg-tint-green", 2: "bg-tint-amber", 3: "bg-tint-red" } as const;
+
+function copyText(m: Message): string {
+  const when = m.timestamp.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const review =
+    m.status === "pending"
+      ? "Not yet reviewed by a doctor."
+      : m.status === "verified"
+        ? "Reviewed by a doctor."
+        : m.status === "rejected"
+          ? "A doctor did not approve this answer."
+          : null;
+  return [
+    `MedTriage · Level ${m.triageLevel} · ${when}`,
+    review,
+    "",
+    m.content,
+    "",
+    "Research system · not a substitute for professional medical advice",
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
 }
 
 function levelNumber(level: string | null | undefined): TriageLevel | undefined {
@@ -768,6 +811,12 @@ const EMPTY_STATE = {
    composer. It only fills the box: nothing is sent until the person sends it, and the
    mode still goes through `pickMode`'s rules once a conversation exists. Reading the
    query string needs a Suspense boundary to prerender, hence the wrapper. */
+/** A rail row's words: shown when the rail is open, kept for screen readers when it is
+ *  folded to icons. */
+function RailLabel({ open, children }: { open: boolean; children: string }) {
+  return open ? <>{children}</> : <span className="sr-only">{children}</span>;
+}
+
 export default function ChatPage() {
   return (
     <Suspense>
@@ -798,7 +847,9 @@ function Chat() {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [pipelineStage, setPipelineStage] = useState(0);
   // The evidence graph while the turn is still running. Null between turns.
-  const [liveExplanation, setLiveExplanation] = useState<Explanation | null>(null);
+  // Still gathered from the stream but no longer drawn: the owner asked on 2026-11-15 for
+  // the "what was considered" graph to leave the transcript. `EvidenceTrace.tsx` is kept.
+  const [, setLiveExplanation] = useState<Explanation | null>(null);
   const [expandedAudit, setExpandedAudit] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -811,6 +862,29 @@ function Chat() {
   const account = useAccount("patient");
   const [resent, setResent] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
+  const [indexQuery, setIndexQuery] = useState("");
+  // 0 is every level. The level filtered on is the highest the backend recorded.
+  const [indexLevel, setIndexLevel] = useState<0 | TriageLevel>(0);
+  // True while a past consultation is being fetched, so the transcript can show its shape.
+  const [loadingSession, setLoadingSession] = useState(false);
+  // The outline at the edge of the transcript: the patient's messages and the answers, to
+  // jump between. An answer keeps the level the backend gave it; nothing is derived here.
+  const transcriptRef = useRef<HTMLElement>(null);
+  const outline = useMemo(
+    () =>
+      messages
+        .filter((m) => m.role === "user" || m.role === "ai")
+        .map((m) => ({
+          id: m.id,
+          text: m.content,
+          time: m.timestamp,
+          from: m.role === "user" ? ("you" as const) : ("system" as const),
+          level: m.role === "ai" ? m.triageLevel : undefined,
+        })),
+    [messages]
+  );
+  const [railOpen, setRailOpen] = useState(true);
+  const { theme, toggle: toggleTheme } = useTheme();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   // Issued by the server on a conversation's first turn; null until then.
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -828,9 +902,16 @@ function Chat() {
   const loadSession = useCallback(
     async (id: string) => {
       if (isTyping) return;
+      // The log closes at once and the transcript shows a placeholder, so a slow answer
+      // is a consultation arriving and not a click that did nothing.
+      setIndexOpen(false);
+      setLoadingSession(true);
       const res = await fetch(`/api/conversations/${id}`, { cache: "no-store" }).catch(() => null);
-      if (!res?.ok) return;
-      const conversation = await res.json();
+      const conversation = res?.ok ? await res.json().catch(() => null) : null;
+      if (!conversation) {
+        setLoadingSession(false);
+        return;
+      }
       setConversationId(conversation.id);
       setConversationTitle(conversation.title || "Untitled Conversation");
       setIsLocked(conversation.locked);
@@ -850,6 +931,7 @@ function Chat() {
       setExpandedAudit(null);
       setDeleteConfirm(null);
       setIndexOpen(false);
+      setLoadingSession(false);
     },
     [isTyping]
   );
@@ -885,14 +967,39 @@ function Chat() {
     setMode(next);
   };
 
-  // Escape closes the index — it is an overlay, and overlays must be dismissible.
+  // A printout is ink on white whatever the theme: in the dark theme the text is bone,
+  // which would vanish on paper. So the page is switched to the light theme while the
+  // browser prints (from the button or from its own menu) and switched back after.
+  useEffect(() => {
+    let wasDark = false;
+    const before = () => {
+      wasDark = document.documentElement.classList.contains("dark");
+      if (wasDark) document.documentElement.classList.replace("dark", "light");
+    };
+    const after = () => {
+      if (wasDark) document.documentElement.classList.replace("light", "dark");
+      wasDark = false;
+    };
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
+    return () => {
+      window.removeEventListener("beforeprint", before);
+      window.removeEventListener("afterprint", after);
+    };
+  }, []);
+
+  // Escape closes the log, and the search starts empty the next time it opens.
   useEffect(() => {
     if (!indexOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setIndexOpen(false);
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      setIndexQuery("");
+      setIndexLevel(0);
+    };
   }, [indexOpen]);
 
   const handleDeleteSession = useCallback(
@@ -1173,9 +1280,9 @@ function Chat() {
   /* ── Composer ── */
 
   const composer = (
-    <div className="w-full max-w-[720px] mx-auto">
+    <div className="w-full max-w-[760px] mx-auto">
       {account && !account.verified ? (
-        <div className="border border-border bg-card p-4">
+        <div className="rounded-[26px] border border-border bg-card p-5">
           <p className="data text-[11px] uppercase tracking-[0.14em] text-muted mb-1.5">
             Confirm your email
           </p>
@@ -1198,14 +1305,17 @@ function Chat() {
           </p>
         </div>
       ) : isLocked ? (
-        <div className="rounded-[20px] border border-t3 bg-t3/8">
-          <div className="flex items-start gap-3 p-4">
-            <Lock className="w-4 h-4 text-t3 shrink-0 mt-0.5" />
+        <div className="rounded-[26px] border border-t3 bg-[#0b0d0c] text-[#ece9e2]">
+          {/* Night, with the new moon: the AI's share of this conversation is now none.
+              The wording is unchanged and still never says anyone was alerted. */}
+          <div className="flex items-center gap-4 p-4 sm:p-5">
+            <PhaseMark level={3} className="w-11 h-11 shrink-0 text-tint-red" />
             <div>
-              <p className="data text-[11px] uppercase tracking-[0.14em] text-t3 mb-1.5">
+              <p className="data text-[11px] uppercase tracking-[0.14em] text-tint-red mb-1.5 inline-flex items-center gap-1.5">
+                <Lock className="w-3 h-3" />
                 Session locked
               </p>
-              <p className="text-[13px] text-foreground leading-relaxed">
+              <p className="text-[15px] leading-relaxed">
                 {lockedForEmergency
                   ? "This conversation is locked. Call 112 now or go to the nearest emergency department."
                   : LOCKED_NOT_EMERGENCY}
@@ -1214,7 +1324,7 @@ function Chat() {
           </div>
         </div>
       ) : (
-        <div className="rounded-[24px] border border-border bg-card focus-within:border-foreground transition-colors">
+        <div className="rounded-[26px] border border-border bg-card shadow-[var(--shadow-1)] focus-within:border-foreground transition-colors">
           <textarea
             ref={textareaRef}
             value={input}
@@ -1227,7 +1337,7 @@ function Chat() {
                   ? "Ask about your child's health."
                   : "Describe your symptoms, or ask a clinical question."
             }
-            className="w-full bg-transparent px-5 pt-4 pb-2 text-[16px] leading-relaxed text-foreground placeholder:text-muted/70 focus:outline-none resize-none min-h-[76px]"
+            className="chat-sans w-full bg-transparent px-5 pt-4 pb-2 text-[16px] leading-relaxed text-foreground placeholder:text-muted/70 focus:outline-none resize-none min-h-[76px]"
             disabled={isTyping}
             rows={3}
             aria-label="Message"
@@ -1353,203 +1463,256 @@ function Chat() {
     </div>
   );
 
-  /* ── The chart band: who you are, where you are, what you can do ── */
+  /* ── The title: set into the page, not in a bar of its own (the owner's reference,
+        2026-11-15). On a wide screen it floats in the margin to the left of the
+        transcript, which scrolls beside it; where there is no margin to float in, it is a
+        plain row with no rule under it. Clicks pass through the floating row. ── */
 
   const chartBand = (
-    <div className="shrink-0 bg-background">
-      {/* Aligned to the transcript column, not the viewport — the band is the
-          chart's title block, so it must sit over the chart. */}
-      <div className="max-w-[720px] mx-auto px-5 h-12 flex items-center gap-3">
-        {hasMessages ? (
-          <>
-            <h1 className="text-[13px] font-semibold truncate">
-              {conversationTitle}
-            </h1>
-            {isLocked && (
-              <span className="data text-[10px] uppercase tracking-[0.14em] text-t3 inline-flex items-center gap-1 shrink-0">
-                <Lock className="w-3 h-3" />
-                Locked
-              </span>
-            )}
-          </>
-        ) : (
-          <span className="label">New consultation</span>
-        )}
-
-        <div className="ml-auto flex items-center gap-1 shrink-0">
-          <button
-            onClick={() => setIndexOpen(true)}
-            className="h-7 px-2.5 data text-[11px] text-muted hover:text-foreground transition-colors inline-flex items-center gap-1.5"
-          >
-            Past consultations
-            <span className="data text-[11px] text-muted tabular-nums rounded-full bg-sunk px-2 py-0.5">
-              {conversations.length}
+    <div className="print:hidden shrink-0 h-12 px-5 flex items-center gap-2.5 bg-background min-[1800px]:absolute min-[1800px]:inset-x-0 min-[1800px]:top-0 min-[1800px]:z-10 min-[1800px]:bg-transparent min-[1800px]:pointer-events-none">
+      {hasMessages && !loadingSession && (
+        <>
+          <h1 className="chat-sans text-[16px] font-semibold truncate min-[1800px]:max-w-[260px]">
+            {conversationTitle}
+          </h1>
+          {isLocked && (
+            <span className="on-field bg-tint-red data text-[10px] font-semibold uppercase tracking-[0.12em] inline-flex items-center gap-1 h-6 px-2.5 rounded-full shrink-0">
+              <Lock className="w-3 h-3" />
+              Locked
             </span>
-          </button>
-          {hasMessages && (
-            <button
-              onClick={startNewSession}
-              disabled={isTyping}
-              className="h-7 px-2.5 inline-flex items-center gap-1.5 text-[12px] text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              New
-            </button>
           )}
-        </div>
+          {/* The browser's own print dialog, which also saves a PDF. What it prints is
+              the transcript alone; see the `print:` classes on the layout below. */}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            title="Print or save as PDF"
+            aria-label="Print this consultation or save it as a PDF"
+            className="pointer-events-auto shrink-0 grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-sunk hover:text-foreground transition-colors"
+          >
+            <Printer className="w-4 h-4" />
+          </button>
+        </>
+      )}
+
+      {/* Below the width where the rail shows, its two jobs move up here. */}
+      <div className="ml-auto flex items-center gap-1.5 shrink-0 lg:hidden">
+        <button
+          onClick={() => setIndexOpen(true)}
+          className="h-8 px-3 rounded-full border border-border data text-[11px] text-muted hover:text-foreground hover:border-foreground transition-colors inline-flex items-center gap-1.5"
+        >
+          Past
+          <span className="tabular-nums">{conversations.length}</span>
+        </button>
+        {hasMessages && (
+          <button
+            onClick={startNewSession}
+            disabled={isTyping}
+            className="h-8 px-3 rounded-full bg-accent text-on-accent inline-flex items-center gap-1.5 text-[12px] hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New
+          </button>
+        )}
       </div>
     </div>
   );
 
-  /* ── The index: past consultations as an admissions log, not a thread list.
-        Same ledger language as the autonomy chart on the overview. ── */
+  /* ── The full log of past consultations ──
+        Rebuilt on 2026-11-15 at the owner's request. It was a table laid over the whole
+        page on a translucent wash, with the transcript showing through; a popup version
+        was tried the same day and rejected. It is now a page of its own in the main
+        column, beside the rail, in place of the conversation: a heading, a search by
+        title, and one hairline list. The rail lists titles only, so this is where the
+        level, the date and deleting live. The chip is the highest level the backend
+        recorded for the consultation, never worked out here. ── */
+
+  const needle = indexQuery.trim().toLowerCase();
+  const shownSessions = conversations.filter(
+    (c) =>
+      (c.title || "Untitled Conversation").toLowerCase().includes(needle) &&
+      (indexLevel === 0 || levelNumber(c.highest_triage_level) === indexLevel)
+  );
+  const filtering = needle !== "" || indexLevel !== 0;
 
   const consultationIndex = indexOpen && (
-    <div
-      className="fixed inset-0 z-50 bg-background/95 backdrop-blur-[2px] overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Past consultations"
-    >
-      <div className="max-w-[880px] mx-auto px-5 py-10">
-        <div className="flex items-baseline justify-between pb-3 mb-1 border-b border-foreground">
-          <h2 className="display text-[1.6rem]">Past consultations</h2>
+    <main className="flex-1 overflow-y-auto px-5" aria-label="Past consultations">
+      <div className="chat-sans w-full max-w-[760px] mx-auto pt-5 pb-16 rise">
+        <button
+          type="button"
+          onClick={() => setIndexOpen(false)}
+          className="data -ml-2.5 inline-flex h-8 items-center gap-2 rounded-full px-2.5 text-[12px] text-muted hover:bg-sunk hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back
+        </button>
+
+        <div className="mt-7 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+          <h1 className="display text-[2.2rem] sm:text-[2.8rem] leading-[1.05]">Your consultations</h1>
           <button
-            onClick={() => setIndexOpen(false)}
-            className="p-1.5 -mr-1.5 text-muted hover:text-foreground transition-colors"
-            aria-label="Close"
+            type="button"
+            onClick={startNewSession}
+            disabled={isTyping}
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-4 text-[13px] font-medium text-on-accent hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
           >
-            <X className="w-4 h-4" />
+            <SquarePen className="w-3.5 h-3.5" />
+            New consultation
           </button>
         </div>
 
         {conversations.length === 0 ? (
-          <div className="py-16">
-            <p className="text-[15px] text-muted leading-relaxed max-w-[46ch]">
-              Nothing here yet. Consultations are recorded once you send your
-              first message, and kept with your account.
-            </p>
-            <button
-              onClick={startNewSession}
-              className="mt-6 h-10 px-4 inline-flex items-center gap-2 bg-accent text-on-accent text-[13px] font-medium hover:opacity-85 transition-opacity"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Start one
-            </button>
-          </div>
+          <p className="mt-8 max-w-[46ch] text-[16px] leading-relaxed text-muted">
+            Nothing here yet. A consultation is recorded once you send your first message,
+            and kept with your account.
+          </p>
         ) : (
           <>
-            {/* Column heads — this is a log, so it gets a header row */}
-            <div className="hidden sm:grid grid-cols-[3.5rem_minmax(0,1fr)_5rem_4rem] gap-4 py-2.5 border-b border-border">
-              <span className="label">Level</span>
-              <span className="label">Concern</span>
-              <span className="label">Turns</span>
-              <span className="label text-right">Seen</span>
+            <label className="mt-8 flex h-12 items-center gap-3 rounded-full border border-border bg-card px-4 transition-colors focus-within:border-foreground">
+              <Search className="w-4 h-4 shrink-0 text-muted" />
+              <span className="sr-only">Search your consultations by title</span>
+              <input
+                type="search"
+                value={indexQuery}
+                onChange={(e) => setIndexQuery(e.target.value)}
+                placeholder="Search by title"
+                className="chat-sans min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted"
+              />
+            </label>
+
+            {/* The chosen level takes its own field, as the chip on an answer does. */}
+            <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Show consultations that reached">
+              {([0, 1, 2, 3] as const).map((l) => {
+                const on = indexLevel === l;
+                return (
+                  <button
+                    key={l}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setIndexLevel(l)}
+                    className={`data inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                      on
+                        ? l === 0
+                          ? "bg-accent text-on-accent"
+                          : `on-field ${LOG_FIELD[l]}`
+                        : "border border-border text-muted hover:border-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {l === 0 ? (
+                      "All"
+                    ) : (
+                      <>
+                        <PhaseMark level={l} className="w-3.5 h-3.5" />
+                        Level {l}
+                      </>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            <ul>
-              {conversations.map((session) => {
+            <p className="data mt-7 mb-2.5 text-[11px] text-muted tabular-nums">
+              {filtering
+                ? `${shownSessions.length} of ${conversations.length}`
+                : `${conversations.length} ${conversations.length === 1 ? "consultation" : "consultations"}`}
+              {" · "}Saved to your account
+            </p>
+
+            {/* The list is 12px wider than the column on each side, so a row's hover band
+                has room around the text while the titles stay on the heading's edge. */}
+            <ul className="-mx-3 border-t border-border">
+              {shownSessions.map((session) => {
                 const isActive = session.id === conversationId;
                 const lvl = levelNumber(session.highest_triage_level);
                 const date = new Date(session.updated_at);
                 const confirming = deleteConfirm === session.id;
+                const blocked = isTyping && !isActive;
 
                 return (
                   <li
                     key={session.id}
-                    className="group relative border-b border-border"
+                    className="group flex items-center gap-1 border-b border-border px-3 transition-colors hover:bg-sunk/60"
                   >
                     <button
+                      type="button"
                       onClick={() => loadSession(session.id)}
-                      disabled={isTyping && !isActive}
-                      className={`w-full grid grid-cols-[3.5rem_minmax(0,1fr)] sm:grid-cols-[3.5rem_minmax(0,1fr)_5rem_4rem] gap-x-4 gap-y-1 items-baseline text-left py-4 pr-10 transition-colors hover:bg-card ${
-                        isTyping && !isActive
-                          ? "opacity-40 cursor-not-allowed"
-                          : ""
+                      disabled={blocked}
+                      aria-current={isActive ? "true" : undefined}
+                      className={`min-w-0 flex-1 flex items-center gap-4 py-4 text-left ${
+                        blocked ? "opacity-40 cursor-not-allowed" : ""
                       }`}
                     >
-                      {/* The triage rule is the scan key — you read this log by colour */}
-                      <span className="flex items-center gap-2">
-                        {lvl ? (
-                          <>
-                            <span
-                              className={`block w-5 h-[3px] shrink-0 ${TRIAGE_CONFIG[lvl].rule}`}
-                            />
-                            <span
-                              className={`data text-[11px] font-semibold ${TRIAGE_CONFIG[lvl].text}`}
-                            >
-                              {lvl}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="data text-[11px] text-muted">—</span>
-                        )}
-                      </span>
-
-                      <span className="min-w-0">
-                        <span className="block text-[14px] truncate text-foreground">
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-[16px] leading-snug ${isActive ? "font-medium" : ""}`}>
                           {session.title || "Untitled Conversation"}
                         </span>
-                        {isActive && (
-                          <span className="label mt-1 block">Open now</span>
-                        )}
-                        {session.checkin_due && (
-                          <span className="label mt-1 block">Check-in waiting</span>
-                        )}
+                        <span className="data mt-1.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted">
+                          <span>
+                            {date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          </span>
+                          <span aria-hidden>·</span>
+                          <span className="tabular-nums">
+                            {session.message_count} {session.message_count === 1 ? "message" : "messages"}
+                          </span>
+                          {isActive && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span className="text-foreground">Open now</span>
+                            </>
+                          )}
+                          {session.checkin_due && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span className="inline-flex items-center gap-1.5 text-foreground">
+                                <span className="block w-1.5 h-1.5 rounded-full bg-foreground" aria-hidden />
+                                Check-in waiting
+                              </span>
+                            </>
+                          )}
+                        </span>
                       </span>
 
-                      <span className="data hidden sm:block text-[12px] text-muted tabular-nums">
-                        {session.message_count}
-                      </span>
-
-                      <span className="data hidden sm:block text-[12px] text-muted text-right tabular-nums">
-                        {date.toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
+                      {/* Child health has no level, by design, so it gets the ink chip. */}
+                      {lvl ? (
+                        <LevelStamp level={lvl} />
+                      ) : session.mode === "child" ? (
+                        <span className="bg-accent text-on-accent data inline-flex h-6 shrink-0 items-center rounded-full px-2.5 text-[11px] font-semibold uppercase tracking-[0.1em]">
+                          Child
+                        </span>
+                      ) : null}
                     </button>
 
+                    {/* Hidden until the row is hovered only where there is a pointer to
+                        hover with; on a touch screen it is always there, a little faint. */}
                     <button
+                      type="button"
                       onClick={() =>
-                        confirming
-                          ? handleDeleteSession(session.id)
-                          : setDeleteConfirm(session.id)
+                        confirming ? handleDeleteSession(session.id) : setDeleteConfirm(session.id)
                       }
                       onBlur={() => setDeleteConfirm(null)}
-                      className={`absolute right-0 top-1/2 -translate-y-1/2 h-8 px-2 inline-flex items-center gap-1.5 transition-opacity ${
+                      aria-label={confirming ? "Confirm delete" : "Delete this consultation"}
+                      className={`shrink-0 h-8 px-2 inline-flex items-center gap-1.5 rounded-full transition-opacity ${
                         confirming
                           ? "text-t3 opacity-100"
-                          : "text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
+                          : "text-muted opacity-60 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
                       }`}
                     >
-                      {confirming && (
-                        <span className="data text-[11px]">Delete?</span>
-                      )}
+                      {confirming && <span className="data text-[11px]">Delete?</span>}
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </li>
                 );
               })}
+              {shownSessions.length === 0 && (
+                <li className="border-b border-border px-3 py-8 text-[15px] text-muted">
+                  {needle ? `No title matches “${indexQuery.trim()}”` : "No consultation reached this level"}
+                  {needle && indexLevel !== 0 ? " at this level." : "."}
+                </li>
+              )}
             </ul>
-
-            <div className="flex items-center justify-between pt-4">
-              <p className="data text-[11px] text-muted">
-                Saved to your account
-              </p>
-              <button
-                onClick={startNewSession}
-                disabled={isTyping}
-                className="h-9 px-3.5 inline-flex items-center gap-2 border border-border text-[13px] text-foreground hover:border-foreground disabled:opacity-40 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New consultation
-              </button>
-            </div>
           </>
         )}
       </div>
-    </div>
+    </main>
   );
 
   /* ── Transcript entries ── */
@@ -1557,9 +1720,11 @@ function Chat() {
   const renderMessage = (message: Message) => {
     if (message.role === "user") {
       return (
-        <div className="flex justify-end">
-          <div className="max-w-[80%] border border-border bg-card px-3.5 py-2.5">
-            <p className="text-[14px] leading-relaxed whitespace-pre-line">
+        <div className="flex justify-end pl-10">
+          {/* The patient's words, bone on ink: the one solid block in the transcript
+              that is not a level, so it can never be mistaken for one. */}
+          <div className="chat-sans max-w-[85%] rounded-[22px] rounded-br-[6px] bg-accent text-on-accent px-[18px] py-3">
+            <p className="text-[16px] leading-[1.55] whitespace-pre-line">
               {message.content}
             </p>
           </div>
@@ -1569,7 +1734,7 @@ function Chat() {
 
     if (message.role === "system") {
       return (
-        <p className="text-[13px] text-muted text-center py-2">
+        <p className="data text-[12px] text-muted text-center py-1">
           {message.content}
         </p>
       );
@@ -1577,38 +1742,39 @@ function Chat() {
 
     if (message.role === "error") {
       return (
-        <div className="border-l-2 border-l-t3 pl-4 py-1">
-          <div className="flex items-center gap-2 text-t3 mb-1.5">
-            <ErrorIcon type={message.errorType} />
-            <span className="data text-[11px] uppercase tracking-[0.14em]">
-              {ERROR_TITLES[message.errorType ?? "unknown"]}
+        <Turn
+          time={message.timestamp}
+          stamp={
+            <span className="inline-flex items-center gap-2 text-t3">
+              <ErrorIcon type={message.errorType} />
+              <span className="data text-[11px] uppercase tracking-[0.14em]">
+                {ERROR_TITLES[message.errorType ?? "unknown"]}
+              </span>
             </span>
-          </div>
-          <p className="text-[14px] text-foreground leading-relaxed">
-            {message.content}
-          </p>
+          }
+        >
+          <p className="text-[16px] leading-[1.65]">{message.content}</p>
           <button
             onClick={retryLast}
-            className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-foreground transition-colors"
+            className="mt-4 h-9 px-3.5 rounded-full border border-border inline-flex items-center gap-2 text-[13px] hover:border-foreground transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Put it back in the box
           </button>
           <Signposts signposts={message.signposts} />
-        </div>
+        </Turn>
       );
     }
 
     if (message.role === "ai" && message.child) {
       return (
-        <>
-          <ChildAnswer child={message.child} timestamp={message.timestamp} />
-          {message.signposts && (
-            <div className="pl-[18px]">
-              <Signposts signposts={message.signposts} />
-            </div>
-          )}
-        </>
+        <Turn
+          time={message.timestamp}
+          stamp={<PlainStamp title="Child health" note="From the WHO and IMNCI guidelines" />}
+        >
+          <ChildAnswer child={message.child} />
+          <Signposts signposts={message.signposts} />
+        </Turn>
       );
     }
 
@@ -1618,25 +1784,16 @@ function Chat() {
       const open = expandedAudit === message.id;
 
       return (
-        <div className={`border-l-2 pl-4 ${cfg.rule.replace("bg-", "border-l-")}`}>
-          {/* The stamp */}
-          <div className="flex items-baseline gap-2.5 mb-2">
-            <span className={`data text-[11px] font-semibold ${cfg.text}`}>
-              Level {message.triageLevel}
-            </span>
-            <span className="data text-[11px] text-muted">
-              {message.triageLevel === 3 && message.emergency === false ? "AI stopped" : cfg.note}
-            </span>
-            <span className="data text-[10px] text-muted ml-auto shrink-0">
-              {message.timestamp.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </span>
-          </div>
-
+        <Turn
+          time={message.timestamp}
+          stamp={<LevelStamp level={message.triageLevel} explain />}
+          copy={copyText(message)}
+        >
+          {/* A step above the patient's own message (owner's request, 2026-11-15): at 16px
+              an answer's lines ran to about a hundred characters. The line height comes
+              down with it so the lines stay about as far apart as they were. */}
           <div
-            className={`text-[14px] leading-[1.65] whitespace-pre-line ${
+            className={`text-[17px] leading-[1.65] whitespace-pre-line ${
               message.triageLevel === 3 ? "font-medium" : ""
             }`}
           >
@@ -1645,11 +1802,9 @@ function Chat() {
 
           <Signposts signposts={message.signposts} />
 
-          {message.explanation && <EvidenceTrace explanation={message.explanation} />}
-
           {/* Level 2 — where the case stands with the doctor */}
           {message.triageLevel === 2 && message.status && (
-            <div className="mt-3.5 border border-border bg-card px-3 py-2.5">
+            <div className="mt-4 rounded-[14px] border border-border px-4 py-3">
               <div className="flex items-center gap-2">
                 {message.status === "pending" && (
                   <>
@@ -1708,7 +1863,7 @@ function Chat() {
               </button>
 
               {open && (
-                <div className="mt-3 border border-border bg-card rise">
+                <div className="mt-3 rounded-[16px] border border-border overflow-hidden rise">
                   {p.orchestratorOutput && (
                     <div className="px-4 pt-4 pb-5 border-b border-border">
                       <Confidence
@@ -1907,7 +2062,7 @@ function Chat() {
               )}
             </div>
           )}
-        </div>
+        </Turn>
       );
     }
 
@@ -1922,8 +2077,7 @@ function Chat() {
         colour in this product means triage level, and nothing else. ── */
 
   const working = (
-    <div className="border-l-2 border-l-border pl-4">
-      <p className="label mb-3">Working</p>
+    <div>
 
       <div className="border-t border-border">
         {PIPELINE.map((step, i) => {
@@ -1991,8 +2145,7 @@ function Chat() {
 
   // Child health has one step to show: the guidelines being read and answered from.
   const childWorking = (
-    <div className="border-l-2 border-l-border pl-4">
-      <p className="label mb-3">Working</p>
+    <div>
       <div className="grid grid-cols-[8.5rem_minmax(0,1fr)] gap-3 items-center py-2.5 border-y border-border">
         <span className="data text-[11px] text-foreground">Reading the guidelines</span>
         <span className="relative h-[2px] bg-border overflow-hidden">
@@ -2003,104 +2156,260 @@ function Chat() {
   );
   const childConversation = (conversationMode ?? (mode === "child" ? "child" : "triage")) === "child";
 
-  /* ── Empty state ── */
+  /* ── The rail: the chat page's own navigation, from the width where there is room.
+        After the owner's reference (2026-11-15) it runs the full height and replaces the
+        site header on this page only, so the header's links live at its foot. It folds
+        to a strip of icons. Titles only in the list: levels, dates and deleting are in
+        the full log. A dot marks a consultation with a check-in waiting, because that is
+        the one thing here a patient has to act on. Below this width the rail is gone and
+        the shared header is back. ── */
 
-  if (!hasMessages) {
-    const empty = EMPTY_STATE[mode];
-    return (
-      <div className="h-screen bg-background text-foreground flex flex-col">
-        <Navbar />
-        {chartBand}
+  const signOut = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    router.replace("/login");
+  };
 
-        <main className="flex-1 overflow-y-auto flex flex-col justify-center px-5">
-          <div className="w-full max-w-[720px] mx-auto py-10 rise">
-            <h1 className="display text-[2.6rem] sm:text-[3.6rem] max-w-[18ch]">
-              {empty.head}
-            </h1>
-            <p className="mt-5 text-[16px] text-muted leading-relaxed max-w-[52ch]">
-              {empty.intro}
-            </p>
+  const railIcon = { className: "w-[18px] h-[18px] shrink-0", strokeWidth: 1.75 };
+  const railRow = `w-full flex items-center gap-2.5 h-9 rounded-[10px] text-left text-[14px] hover:bg-sunk transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+    railOpen ? "px-2.5" : "justify-center"
+  }`;
+  const tip = (label: string) => (railOpen ? undefined : label);
 
-            <div className="mt-8 mb-8">
-              <p className="label mb-3">Try</p>
-              <div className="flex flex-col gap-1.5">
-                {empty.prompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => {
-                      setInput(prompt);
-                      textareaRef.current?.focus();
-                    }}
-                    className="group flex items-center justify-between gap-3 rounded-2xl bg-sunk px-4 py-3 text-left hover:bg-accent transition-colors"
-                  >
-                    <span className="text-[15px] text-foreground group-hover:text-on-accent transition-colors">
-                      {prompt}
-                    </span>
-                    <ArrowUp className="w-3.5 h-3.5 text-on-accent rotate-45 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {composer}
-          </div>
-        </main>
-
-        {consultationIndex}
+  const rail = (
+    <aside
+      className={`chat-sans print:!hidden hidden lg:flex shrink-0 flex-col border-r border-border transition-[width] duration-200 ${
+        railOpen ? "w-[272px]" : "w-[56px]"
+      }`}
+    >
+      <div className={`flex items-center h-14 shrink-0 ${railOpen ? "justify-between pl-[18px] pr-2" : "justify-center"}`}>
+        {/* The logo goes nowhere here ("Overview" at the foot does that). Folded, the mark
+            is the button that opens the rail again. */}
+        {railOpen ? (
+          <span
+            className="inline-flex items-center gap-2 text-[20px] font-medium tracking-[-0.03em]"
+            style={{ fontFamily: "var(--font-newsreader), serif" }}
+          >
+            <LogoMark />
+            MedTriage
+          </span>
+        ) : (
+          <button
+            onClick={() => setRailOpen(true)}
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
+            className="grid place-items-center w-9 h-9 rounded-[10px] text-[20px] hover:bg-sunk transition-colors"
+          >
+            <LogoMark />
+          </button>
+        )}
+        {railOpen && (
+          <button
+            onClick={() => setRailOpen(false)}
+            aria-label="Collapse sidebar"
+            className="grid place-items-center w-9 h-9 rounded-[10px] text-muted hover:text-foreground hover:bg-sunk transition-colors"
+          >
+            <PanelLeft {...railIcon} />
+          </button>
+        )}
       </div>
-    );
-  }
 
-  /* ── Active consultation ── */
+      <div className="px-2">
+        <button onClick={startNewSession} disabled={isTyping} title={tip("New consultation")} className={railRow}>
+          <SquarePen {...railIcon} />
+          <RailLabel open={railOpen}>New consultation</RailLabel>
+        </button>
+        <button
+          onClick={() => setIndexOpen((open) => !open)}
+          aria-pressed={indexOpen}
+          title={tip("All consultations")}
+          className={`${railRow} ${indexOpen ? "bg-sunk" : ""}`}
+        >
+          <History {...railIcon} />
+          <RailLabel open={railOpen}>All consultations</RailLabel>
+        </button>
+      </div>
+
+      <div className="mx-2 mt-3 border-t border-border" aria-hidden />
+
+      {railOpen ? (
+        <>
+          <p className="px-[18px] pt-4 pb-2 text-[14px] text-muted">Past consultations</p>
+          <ul className="flex-1 min-h-0 overflow-y-auto px-2 pb-3">
+            {conversations.length === 0 && (
+              <li className="px-2.5 py-1.5 text-[14px] text-muted/70">No consultations yet</li>
+            )}
+            {conversations.map((session) => {
+              const isActive = session.id === conversationId;
+              return (
+                <li key={session.id}>
+                  <button
+                    onClick={() => loadSession(session.id)}
+                    disabled={isTyping && !isActive}
+                    aria-current={isActive ? "true" : undefined}
+                    className={`${railRow} ${isActive ? "bg-sunk" : ""}`}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {session.title || "Untitled Conversation"}
+                    </span>
+                    {session.checkin_due && (
+                      <>
+                        <span className="block w-1.5 h-1.5 shrink-0 rounded-full bg-foreground" aria-hidden />
+                        <span className="sr-only">Check-in waiting</span>
+                      </>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : (
+        <div className="flex-1" />
+      )}
+
+      {/* The site header's links, which have no bar to sit in on this page. */}
+      <nav aria-label="Main" className="shrink-0 mx-2 py-2 border-t border-border">
+        <Link href="/dashboard" title={tip("Dashboard")} className={railRow}>
+          <LayoutDashboard {...railIcon} />
+          <RailLabel open={railOpen}>Dashboard</RailLabel>
+        </Link>
+        <Link href="/" title={tip("Overview")} className={railRow}>
+          <Home {...railIcon} />
+          <RailLabel open={railOpen}>Overview</RailLabel>
+        </Link>
+        <Link href="/about" title={tip("About")} className={railRow}>
+          <Info {...railIcon} />
+          <RailLabel open={railOpen}>About</RailLabel>
+        </Link>
+        <button onClick={toggleTheme} title={tip("Switch theme")} className={railRow}>
+          {theme === "dark" ? <Sun {...railIcon} /> : <MoonIcon {...railIcon} />}
+          <RailLabel open={railOpen}>{theme === "dark" ? "Light theme" : "Dark theme"}</RailLabel>
+        </button>
+        <button onClick={signOut} title={tip("Sign out")} className={railRow}>
+          <LogOut {...railIcon} />
+          <RailLabel open={railOpen}>Sign out</RailLabel>
+        </button>
+      </nav>
+    </aside>
+  );
+
+  const empty = EMPTY_STATE[mode];
 
   return (
-    <div className="h-screen bg-background text-foreground flex flex-col">
-      <Navbar />
-      {chartBand}
-
-      <main className="flex-1 overflow-y-auto px-5 py-8">
-        <div className="max-w-[720px] mx-auto space-y-7">
-          {messages.map((message) => (
-            <div key={message.id} className="rise">
-              {renderMessage(message)}
-            </div>
-          ))}
-
-          {followupState?.state === "active" && !followupState.checkin_due && !isTyping && (
-            <div className="rise">
-              <ComeBackIf followup={followupState} />
-            </div>
-          )}
-
-          {isTyping && (
-            <div className="rise">
-              {childConversation ? childWorking : working}
-              {/* The same graph that will sit under the answer, filling in as the
-                  sources actually report. The wait becomes the explanation. */}
-              {liveExplanation && (
-                <EvidenceTrace explanation={liveExplanation} live />
-              )}
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-      </main>
-
-      <div className="shrink-0 px-5 pb-4 pt-2 bg-background">
-        {followupState?.state === "active" && followupState.checkin_due && !isLocked && !isTyping && (
-          <CheckInCard
-            followup={followupState}
-            busy={checkinBusy}
-            onAnswer={answerCheckIn}
-            onPostpone={postponeCheckIn}
-            onStop={stopCheckIns}
-          />
-        )}
-        {composer}
+    <div className="consult-print h-screen bg-background text-foreground flex flex-col print:h-auto print:block print:bg-white">
+      {/* From `lg` the rail carries the logo and the links, so the header stands down. */}
+      <div className="lg:hidden shrink-0 print:hidden">
+        <Navbar compact />
       </div>
 
-      {consultationIndex}
+      <div className="flex-1 min-h-0 flex border-t border-border lg:border-t-0 print:block print:border-0">
+        {rail}
+
+        <div className="relative flex-1 min-w-0 flex flex-col print:block">
+          {consultationIndex}
+          {/* While the log is open the conversation is hidden, not unmounted, so a reply
+              still arriving and a half-typed message are there when it closes. */}
+          <div className={indexOpen ? "hidden" : "contents"}>
+          {chartBand}
+
+          {loadingSession ? (
+            <main className="flex-1 overflow-y-auto px-5 py-8">
+              <div className="max-w-[760px] mx-auto">
+                <TranscriptSkeleton />
+              </div>
+            </main>
+          ) : hasMessages ? (
+            <>
+              {outline.length > 0 && <ChatOutline items={outline} scroller={transcriptRef} />}
+
+              <main ref={transcriptRef} className="flex-1 overflow-y-auto px-5 py-8 print:overflow-visible print:p-0">
+                <div className="max-w-[760px] mx-auto space-y-8 print:max-w-none">
+                  {/* On paper only: what this is, whose it is and when it began. */}
+                  <header className="hidden print:block border-b border-border pb-5">
+                    <p className="display text-[20px]">MedTriage</p>
+                    <h1 className="chat-sans mt-3 text-[20px] font-semibold">{conversationTitle}</h1>
+                    <p className="data mt-1.5 text-[11px] text-muted">
+                      {account?.name ? `${account.name} · ` : ""}
+                      {messages[0]?.timestamp.toLocaleDateString(undefined, { dateStyle: "long" })}
+                    </p>
+                  </header>
+                  {messages.map((message) => (
+                    <div key={message.id} id={outlineTarget(message.id)} className="rise scroll-mt-6">
+                      {renderMessage(message)}
+                    </div>
+                  ))}
+
+                  {followupState?.state === "active" && !followupState.checkin_due && !isTyping && (
+                    <div className="rise">
+                      <ComeBackIf followup={followupState} />
+                    </div>
+                  )}
+
+                  {isTyping && (
+                    <div className="rise print:hidden">
+                      <Turn stamp={<span className="label">Working</span>}>
+                        {childConversation ? childWorking : working}
+                      </Turn>
+                    </div>
+                  )}
+
+                  <p className="hidden print:block border-t border-border pt-4 data text-[10px] text-muted">
+                    Research system · not a substitute for professional medical advice
+                  </p>
+
+                  <div ref={messagesEndRef} />
+                </div>
+              </main>
+
+              <div className="shrink-0 px-5 pb-4 pt-2 bg-background print:hidden">
+                {followupState?.state === "active" && followupState.checkin_due && !isLocked && !isTyping && (
+                  <CheckInCard
+                    followup={followupState}
+                    busy={checkinBusy}
+                    onAnswer={answerCheckIn}
+                    onPostpone={postponeCheckIn}
+                    onStop={stopCheckIns}
+                  />
+                )}
+                {composer}
+              </div>
+            </>
+          ) : (
+            <main className="flex-1 overflow-y-auto flex flex-col justify-center px-5">
+              <div className="w-full max-w-[760px] mx-auto py-10 rise">
+                <Avatar size={52} />
+                <h1 className="display text-[2.6rem] sm:text-[3.6rem] max-w-[18ch] mt-7">
+                  {empty.head}
+                </h1>
+                <p className="mt-5 mb-8 text-[17px] text-muted leading-relaxed max-w-[52ch]">
+                  {empty.intro}
+                </p>
+
+                {composer}
+
+                <div className="mt-7">
+                  <p className="label mb-3">Try</p>
+                  <div className="flex flex-wrap gap-2">
+                    {empty.prompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        onClick={() => {
+                          setInput(prompt);
+                          textareaRef.current?.focus();
+                        }}
+                        className="rounded-[18px] border border-border px-4 py-2.5 text-left text-[14px] leading-snug hover:bg-accent hover:border-accent hover:text-on-accent transition-colors"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </main>
+          )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

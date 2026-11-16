@@ -651,3 +651,138 @@ body {
     display: none !important;
   }
 }
+
+/* ── Waiting ── (`components/Skeleton.tsx`)
+   A bar the shape of what is coming, and a slow band of light crossing it. The band is
+   the text colour at low strength, so it is bone-on-ink in the dark theme and
+   ink-on-bone in the light one without a second set of colours. */
+.skel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    100deg,
+    transparent 15%,
+    color-mix(in srgb, var(--foreground) 10%, transparent) 50%,
+    transparent 85%
+  );
+  animation: skel-sweep 1.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-delay: inherit;
+}
+@keyframes skel-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* The moon that waxes and wanes. One ellipse does it: in the page's colour it shrinks
+   from the whole disc to nothing, uncovering the lit half (new to half); then in ink it
+   grows back, adding the other half (half to full); `alternate` runs it home again. On a
+   card, set `--moon-bg` to the card's colour. Still, it rests at the half moon. */
+.moon-wax {
+  fill: var(--moon-bg, var(--background));
+  transform: scaleX(0);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: moon-wax 2.6s ease-in-out infinite alternate;
+}
+@keyframes moon-wax {
+  0% {
+    transform: scaleX(1);
+    fill: var(--moon-bg, var(--background));
+  }
+  49.9% {
+    transform: scaleX(0);
+    fill: var(--moon-bg, var(--background));
+  }
+  50% {
+    transform: scaleX(0);
+    fill: currentColor;
+  }
+  100% {
+    transform: scaleX(1);
+    fill: currentColor;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel::after,
+  .moon-wax {
+    animation: none;
+  }
+}
+
+/* ── A printed consultation ──
+   The chat page prints its transcript alone (the `print:` classes there hide the rest).
+   The rule above gives every page no margin, which the prescription sheet needs; a
+   consultation is running text, so it gets a named page with margins of its own. Colours
+   are kept, or the patient's own messages (bone on ink) and the call buttons would print
+   as pale text on white. */
+@page consult {
+  size: A4;
+  margin: 16mm 16mm 18mm;
+}
+@media print {
+  .consult-print {
+    page: consult;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* ── Call buttons ──
+   The handset rocks for a moment and then rests, so a number you can ring draws the eye
+   without nagging. 112 rings more often and its button pulses; nothing else on the page
+   moves on its own. Both stop for anyone who asked for less motion. */
+@keyframes call-ring {
+  0%, 30%, 100% { transform: rotate(0); }
+  4% { transform: rotate(-18deg); }
+  9% { transform: rotate(15deg); }
+  14% { transform: rotate(-12deg); }
+  19% { transform: rotate(9deg); }
+  24% { transform: rotate(-5deg); }
+}
+@keyframes call-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--foreground) 45%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 10px transparent; }
+}
+.call-ring {
+  animation: call-ring 3.2s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+.call-ring-fast {
+  animation-duration: 1.8s;
+}
+.call-pulse {
+  animation: call-pulse 1.8s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .call-ring,
+  .call-pulse {
+    animation: none;
+  }
+}
+
+/* The conversation is set in Geist: answers, the patient's messages and the composer.
+   `font-size-adjust` is inherited on purpose, so the sans holds the same x-height the
+   serif had and none of the chat's sizes need re-tuning. Labels and readouts inside an
+   answer keep the mono through `.label` and `.data`. */
+.chat-sans {
+  font-family: var(--font-chat-sans), system-ui, sans-serif;
+}
+
+/* The handset on a helpline's call button. The button is ink in the light theme and bone
+   in the dark one, so the green is bright on ink and the darker green that passes on
+   bone. A hospital's number is plain text on the page and uses `text-t1` instead. */
+.call-green {
+  color: #22c77e;
+}
+.dark .call-green {
+  color: #0b7d4d;
+}

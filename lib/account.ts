@@ -72,6 +72,10 @@ export function useAccount(required?: Role): Account | null {
           router.replace(`/login?next=${encodeURIComponent(here)}`);
           return;
         }
+        // Any other failure (the backend is down, so the route answers 502) is not an
+        // account. Read as one, its missing role sent a doctor, or a patient on the
+        // dashboard, to /chat. Stay in the loading state, as for a network failure below.
+        if (!res.ok) return;
         const me = (await res.json()) as Account;
         if (required && me.role !== required) {
           router.replace(homeFor(me.role));

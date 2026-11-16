@@ -8,14 +8,15 @@ import {
   Scale,
   Statement,
 } from "./components/site/Home";
+import { Lifelines } from "./components/site/Lifelines";
 
 /* The home page. Built from `app/components/site/`; the design, its tokens and the
    reasoning behind the moon are in `app/site.css` and `site/Moon.tsx`.
 
    Order is the argument: the claim (hero), what it means in a sentence (statement), the
    three levels it rests on (scale), one question going through them (demo), what comes
-   back with an answer (carries), what the system may never do (constraints), and the
-   questions left over. The close and the footer come from the shell. */
+   back with an answer (carries), where it points when it may say less (lifelines), what
+   the system may never do (constraints), and the questions left over. The close and the footer come from the shell. */
 export default function Home() {
   return (
     <SiteShell>
@@ -24,6 +25,7 @@ export default function Home() {
       <Scale />
       <Demo />
       <Carries />
+      <Lifelines />
       <Constraints />
       <Faq />
     </SiteShell>

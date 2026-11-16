@@ -16,11 +16,12 @@ export function Mark() {
  *
  * One header for the whole product: the same logo, the same links, the same button. The
  * `.site.bare` wrapper lends it the site's type and classes without the site's dark
- * field, so it sits on whatever theme the page is in (see `site.css`).
+ * field, so it sits on whatever theme the page is in (see `site.css`). `compact` is the
+ * chat page's shorter bar.
  */
-export function Navbar() {
+export function Navbar({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="site bare">
+    <div className={`site bare${compact ? " compact" : ""}`}>
       <Nav bare />
     </div>
   );

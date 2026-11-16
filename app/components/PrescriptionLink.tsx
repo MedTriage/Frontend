@@ -14,7 +14,7 @@ export function PrescriptionLink({ prescription }: { prescription: PrescriptionR
   return (
     <Link
       href={`/prescriptions/${prescription.id}`}
-      className="mt-3.5 flex items-center gap-2.5 border border-border bg-card px-3 py-2.5 hover:border-foreground/30 transition-colors"
+      className="mt-4 flex items-center gap-3 rounded-[16px] border border-border px-4 py-3 hover:border-foreground/40 transition-colors"
     >
       <Pill className="w-3.5 h-3.5 shrink-0 text-t1" />
       <span className="text-[13px] min-w-0 flex-1">

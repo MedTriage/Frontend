@@ -446,6 +446,17 @@ a:hover > .logo-mark,
   position: relative;
   color: var(--foreground);
 }
+/* The chat page's header is shorter. Under it the page is a rail and a transcript that
+   both start at the top, and at 72px the logo sat in a band of empty space above them.
+   The logo's link becomes a flex box so the mark centres on the bar itself, not on a
+   text baseline a few pixels high. */
+.site.bare.compact .nav {
+  height: 52px;
+}
+.site.bare.compact .nav > a:first-child {
+  display: flex;
+  align-items: center;
+}
 .site.bare .nav-cta > span {
   color: var(--background);
 }
@@ -2102,6 +2113,226 @@ a:hover > .logo-mark,
   }
   .site .sec-head .lede {
     justify-self: start;
+  }
+}
+
+/* ── Home: lifelines ──
+   A night panel on bone. The hairlines between tiles are the grid's own background showing
+   through a 1px gap, so no tile draws a border and none doubles up. Six columns: the two
+   emergency numbers take three each, the other three take two. */
+.site .life {
+  --hair: color-mix(in srgb, var(--bone) 16%, var(--ink));
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--hair);
+  border-radius: 26px;
+  overflow: hidden;
+}
+.site .life-tile {
+  grid-column: span 2;
+  display: flex;
+  background: var(--ink);
+  color: var(--bone);
+  transition: background 0.5s var(--ease);
+}
+.site .life-tile:nth-child(-n + 2) {
+  grid-column: span 3;
+}
+.site .life-tile:hover {
+  background: var(--ink-2);
+}
+.site .life-in {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: clamp(320px, 30vw, 430px);
+  padding: clamp(22px, 2.4vw, 36px);
+}
+.site .life-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.site .life-lv {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.site .life-lv svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.site .life-lv svg:first-of-type {
+  margin-left: 3px;
+}
+/* The drawing takes the spare height, so the names line up along the foot of a row. */
+.site .life-g {
+  width: clamp(104px, 11vw, 152px);
+  height: auto;
+  display: block;
+  margin: clamp(22px, 3vw, 44px) 0 auto;
+}
+.site .life-in .h3 {
+  margin-top: clamp(24px, 3vw, 44px);
+}
+.site .life-in p {
+  margin: 12px 0 0;
+  max-width: 40ch;
+}
+.site .life-in p.mono-s {
+  margin-top: 10px;
+}
+.site .life-foot {
+  margin: 22px 0 0;
+  max-width: 78ch;
+  opacity: 0.66;
+}
+
+/* The drawings move a little, each in the way of the thing it draws. Opacity and dash
+   offsets where possible; the one transform scales a bar about its own middle. */
+.site .g-beat {
+  opacity: 0.5;
+  animation: life-beat 2.6s ease-in-out infinite;
+}
+.site .g-flow {
+  animation: life-flow 1.5s linear infinite;
+}
+.site .g-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: life-wave 1.7s ease-in-out infinite alternate;
+}
+.site .g-live {
+  animation: life-live 1.6s ease-in-out infinite alternate;
+}
+@keyframes life-beat {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  25% {
+    opacity: 1;
+  }
+}
+@keyframes life-flow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+@keyframes life-wave {
+  to {
+    transform: scaleY(0.38);
+  }
+}
+@keyframes life-live {
+  to {
+    opacity: 0.25;
+  }
+}
+/* About: the same five at length. One row a service: its drawing, its name, then the facts
+   as a definition list. On ink, because the drawings' level colours are thin strokes and
+   would be lost on bone. */
+.site .lf-rules {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(24px, 3.4vw, 64px);
+  list-style: none;
+  margin: 0 0 clamp(48px, 6vw, 96px);
+  padding: 0;
+}
+.site .lf-rules p {
+  margin: 14px 0 0;
+  max-width: 36ch;
+}
+.site .lf-list {
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
+}
+.site .lf-row {
+  display: grid;
+  grid-template-columns: clamp(72px, 8vw, 120px) minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(20px, 3.4vw, 64px);
+  align-items: start;
+  padding-block: clamp(30px, 3.6vw, 56px);
+  border-top: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
+}
+.site .lf-row .life-g {
+  width: 100%;
+  margin: 0;
+}
+.site .lf-name p {
+  margin: 14px 0 0;
+  max-width: 34ch;
+}
+.site .lf-name .life-lv {
+  margin-top: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.site .lf-facts {
+  display: grid;
+  grid-template-columns: 10ch minmax(0, 1fr);
+  gap: 16px 20px;
+  margin: 0;
+}
+.site .lf-facts dt {
+  padding-top: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+.site .lf-facts dd {
+  margin: 0;
+  max-width: 54ch;
+}
+.site .lf-facts .arrow-link {
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 40%, transparent);
+  padding-bottom: 3px;
+}
+@media (max-width: 900px) {
+  .site .lf-rules {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site .lf-row {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .site .lf-facts {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site .life-g * {
+    animation: none;
+  }
+}
+@media (max-width: 900px) {
+  .site .life {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .site .life-tile,
+  .site .life-tile:nth-child(-n + 2) {
+    grid-column: span 1;
+  }
+  .site .life-tile:nth-child(3) {
+    grid-column: span 2;
+  }
+  .site .life-in {
+    min-height: 0;
+  }
+}
+@media (max-width: 560px) {
+  .site .life {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site .life-tile,
+  .site .life-tile:nth-child(-n + 2),
+  .site .life-tile:nth-child(3) {
+    grid-column: auto;
   }
 }
 

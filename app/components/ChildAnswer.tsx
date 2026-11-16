@@ -19,11 +19,11 @@ export interface ChildView {
 function Banner({ override }: { override: NonNullable<ChildView["override"]> }) {
   const unchecked = override.reason === "unchecked";
   return (
-    <div role="alert" className="border border-t3 bg-t3/8 px-4 py-3 mb-3.5">
+    <div role="alert" className="on-field bg-tint-red rounded-[16px] px-4 py-3.5 mb-4">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="w-4 h-4 text-t3 shrink-0 mt-0.5" />
+        <AlertTriangle className="w-[18px] h-[18px] shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <p className="text-[14px] font-medium text-t3 leading-snug">
+          <p className="text-[17px] font-medium leading-snug">
             {unchecked
               ? "If your child has any of these signs, go to the nearest hospital now:"
               : "Call 112 or go to the nearest hospital or emergency department now."}
@@ -53,29 +53,23 @@ function Banner({ override }: { override: NonNullable<ChildView["override"]> }) 
   );
 }
 
-export function ChildAnswer({ child, timestamp }: { child: ChildView; timestamp: Date }) {
+/* The frame, the logo and the "Child health" strip come from `Turn` in the chat page. */
+export function ChildAnswer({ child }: { child: ChildView }) {
   const answered = child.guidelines || child.general;
 
   return (
-    <div className="border-l-2 border-l-border pl-4">
-      <div className="flex items-baseline gap-2.5 mb-2">
-        <span className="data text-[11px] font-semibold">Child health</span>
-        <span className="data text-[11px] text-muted">From the WHO and IMNCI guidelines</span>
-        <span className="data text-[10px] text-muted ml-auto shrink-0">
-          {timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </span>
-      </div>
-
+    <div>
       {child.override && <Banner override={child.override} />}
 
       {child.guidelines && (
-        <div className="text-[14px] leading-[1.65] whitespace-pre-line">{child.guidelines}</div>
+        // The same size as a levelled answer on the chat page; keep the two together.
+        <div className="text-[17px] leading-[1.65] whitespace-pre-line">{child.guidelines}</div>
       )}
 
       {child.general && (
-        <div className="mt-3 border border-border bg-card px-3.5 py-3">
+        <div className="mt-4 rounded-[16px] border border-border px-4 py-3.5">
           <p className="label mb-1.5">General information, not from the WHO/IMNCI guidelines</p>
-          <p className="text-[14px] leading-[1.65] whitespace-pre-line">{child.general}</p>
+          <p className="text-[16px] leading-[1.6] whitespace-pre-line">{child.general}</p>
         </div>
       )}
 
@@ -105,7 +99,7 @@ export function ChildAnswer({ child, timestamp }: { child: ChildView; timestamp:
         </div>
       )}
 
-      <section aria-label="When to go to hospital" className="mt-4 border border-border bg-card">
+      <section aria-label="When to go to hospital" className="mt-5 rounded-[16px] border border-border">
         <p className="label px-4 pt-3.5 pb-2.5 border-b border-border">
           Go to a hospital straight away if
         </p>
